@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "author": "Pedro Robinet",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-breadboard-half", "id": "bb1", "top": 83.4, "left": 137.2, "attrs": {} },
+    { "type": "board-esp32-devkit-c-v4", "id": "esp", "top": 0, "left": 0, "attrs": {} },
+    { "type": "wokwi-hc-sr04", "id": "ultrasonic1", "top": 11.1, "left": -234.5, "attrs": {} },
+    { "type": "wokwi-rgb-led", "id": "rgb1", "top": -5.6, "left": 231.5, "attrs": {} },
+    { "type": "wokwi-rgb-led", "id": "rgb2", "top": -5.6, "left": 269.9, "attrs": {} },
+    { "type": "wokwi-rgb-led", "id": "rgb3", "top": -5.6, "left": 317.9, "attrs": {} },
+    {
+      "type": "wokwi-pir-motion-sensor",
+      "id": "pir1",
+      "top": -178.4,
+      "left": -160.98,
+      "attrs": {}
+    },
+    {
+      "type": "wokwi-7segment",
+      "id": "sevseg1",
+      "top": -13.38,
+      "left": 394.72,
+      "attrs": { "digits": "4" }
+    }
+  ],
+  "connections": [ [ "esp:TX", "$serialMonitor:RX", "", [] ], [ "esp:RX", "$serialMonitor:TX", "", [] ] ],
+  "dependencies": {}
+}
