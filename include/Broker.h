@@ -15,20 +15,20 @@ const char *password = "";
 
 // MQTT Broker
 const char *mqtt_broker = "broker.emqx.io";
-const char *topic = "emqx/esp32";
-const char *mqtt_username = "emqx";
-const char *mqtt_password = "public";
+const char *topic = "semaforo/esp32";
+const char *mqtt_username = "codapli";
+const char *mqtt_password = "codapli";
 const int mqtt_port = 1883;
 
 WiFiClient espClient;
 PubSubClient client;
 
-
 public:
   Broker();
-  void callback(char *topic, byte *payload, unsigned int length);
   void begin();
   PubSubClient& getClient();
+  static Broker* brokerInstance;
+  void mqtt_callback(char *topic, byte *payload, unsigned int length);
 };
 
 #endif  // !BROKER_H

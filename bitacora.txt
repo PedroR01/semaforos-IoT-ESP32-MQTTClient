@@ -1,0 +1,40 @@
+Este archivo sirve para llevar una referencia rápida y diaria de los problemas afrontados,
+documentación referida y proceso de trabajo, con el fin de un mayor entendimiento del entorno
+y de las decisiones tomadas.
+Este archivo no es una guía de instalación ni descripción del proyecto ni de las tecnologías usadas,
+es solo un registro.
+
+23/06/26
+La investigación y creación de este proyecto remonta de principios de fines de mayo / principios de junio.
+El día de hoy dejo constancia de la creación de la bitacora y anotaciones/referencias relevantes tanto
+del día de hoy como de los días pasados.
+
+Documentación de wokwi para migración y config de proyecto local:
+https://docs.wokwi.com/vscode/project-config
+Documentación de PlatformIO para instalar, integrar y usar en VS Code:
+https://docs.platformio.org/en/latest/integration/ide/vscode.html#quick-start
+
+En mi caso al usar Cursor, tengo algunos inconvenientes particulares a la hora de integrar como si fuese
+VS Code ya que es un fork del mismo. Por ejemplo para algunas extensiones tengo que descargar el archivo
+.vsix directamente desde VS Code y luego tomar importar dicho archivo desde Cursor para agregar la extensión.
+
+Con platformio lo preparas para subir el proyecto al microcontrolador.
+Con wokwi simulas su funcionamiento de forma virtual.
+
+Osea que por ahora todo problema a resolver en el código lo tengo que testear y ajustar tanto
+para wokwi como para platformio. Por ejemplo las librerias me las toma platformio si las incluyo
+en el archivo platformio.ini, pero queda ver como lo hago con wokwi...
+
+Después de una larga lucha pude establecer la conexión con el broker y terminar de entender
+el funcionamiento de los puertos (no es lo mismo usar el 1883 que el 8084) para la conexión
+con el broker y por medio del protocolo MQTT. Todavía queda resolver que el cliente (ESP32)
+reciba mensajes del topico al que esta suscripto y terminar de hacer las conexiones en el diagram.json
+para testear en wokwi.
+
+Estuve un rato largo charlando e intentando que las IA me hagan el circuito escribiendo el JSON pero no hubo
+caso, ninguna me dio resultados por el momento. Antes de probar con otra IA más potenten voy a intentar
+conectarlas manualmente y retomar conceptos de electrónica.
+
+Tambien debería ver si hace falta subir las carpetas .vscode y .pio al repo.
+Una vez que ya cierre esta parte, puedo volver a la parte de dockerizar el entorno completo para un mejor
+trabajo en equipo y facilitar le levantamiento del proyecto.

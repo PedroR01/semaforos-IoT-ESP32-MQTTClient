@@ -1,19 +1,15 @@
 #include "Broker.h"
 
-// Constructor
-Broker::Broker(){
+Broker* Broker::brokerInstance=nullptr;
 
+void mqttCallback(char* topic, byte* payload, unsigned int length)
+{
+   Broker::brokerInstance->mqtt_callback(topic, payload, length);
 }
 
-void callback(char *topic, byte *payload, unsigned int length) {
-    Serial.print("Message arrived in topic: ");
-    Serial.println(topic);
-    Serial.print("Message:");
-    for (int i = 0; i < length; i++) {
-        Serial.print((char) payload[i]);
-    }
-    Serial.println();
-    Serial.println("-----------------------");
+// Constructor
+Broker::Broker(){
+  brokerInstance = this;
 }
 
 // Actions on Init
@@ -26,10 +22,15 @@ void Broker::begin(){
         Serial.println("Connecting to WiFi..");
     }
     Serial.println("Connected to the Wi-Fi network");
+
     //connecting to a mqtt broker
     client.setClient(espClient);
     client.setServer(mqtt_broker, mqtt_port);
-    client.setCallback(callback);
+
+    // Set the callback function for the MQTT client.
+    // In ESP32 accepts lambdas; [this] captures the current instance of Broker.
+    client.setCallback(mqttCallback);
+
     while (!client.connected()) {
         String client_id = "esp32-client-";
         client_id += String(WiFi.macAddress());
@@ -42,9 +43,22 @@ void Broker::begin(){
             delay(2000);
         }
     }
+
     // Publish and subscribe
     client.publish(topic, "Hi, I'm ESP32 ^^");
     client.subscribe(topic);
+}
+
+// Function to handle the callback structure for the MQTT client. It is called when a message is received.
+void Broker::mqtt_callback(char *topic, byte *payload, unsigned int length) {
+    Serial.print("Message arrived in topic: ");
+    Serial.println(topic);
+    Serial.print("Message:");
+    for (int i = 0; i < length; i++) {
+        Serial.print((char) payload[i]);
+    }
+    Serial.println();
+    Serial.println("-----------------------");
 }
 
 PubSubClient& Broker::getClient() {
