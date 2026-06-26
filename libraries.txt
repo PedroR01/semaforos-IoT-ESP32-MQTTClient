@@ -2,3 +2,5 @@
 # See https://docs.wokwi.com/guides/libraries
 
 PubSubClient
+TM1637
+NewPing

@@ -3,6 +3,9 @@
 
 #include <WiFi.h>
 #include <PubSubClient.h>
+#include <functional>
+
+using StopCallback = std::function<void()>;
 
 class Broker {
 private:
@@ -22,11 +25,13 @@ const int mqtt_port = 1883;
 
 WiFiClient espClient;
 PubSubClient client;
+StopCallback _onStopCallback;
 
 public:
   Broker();
   void begin();
   PubSubClient& getClient();
+  void setOnStopCallback(StopCallback cb);
   static Broker* brokerInstance;
   void mqtt_callback(char *topic, byte *payload, unsigned int length);
 };

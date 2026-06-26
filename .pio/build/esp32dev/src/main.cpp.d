@@ -194,4 +194,6 @@
  C:/Users/valic/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiUdp.h \
  C:/Users/valic/.platformio/packages/framework-arduinoespressif32/cores/esp32/Udp.h \
  C:/Users/valic/.platformio/packages/framework-arduinoespressif32/cores/esp32/cbuf.h \
- .pio/libdeps/esp32dev/PubSubClient/src/PubSubClient.h
+ .pio/libdeps/esp32dev/PubSubClient/src/PubSubClient.h include/Sensor.h \
+ .pio/libdeps/esp32dev/NewPing/src/NewPing.h \
+ .pio/libdeps/esp32dev/TM1637/TM1637Display.h

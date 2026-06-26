@@ -38,3 +38,43 @@ conectarlas manualmente y retomar conceptos de electrónica.
 Tambien debería ver si hace falta subir las carpetas .vscode y .pio al repo.
 Una vez que ya cierre esta parte, puedo volver a la parte de dockerizar el entorno completo para un mejor
 trabajo en equipo y facilitar le levantamiento del proyecto.
+
+24/06/26
+He comenzado con el repaso de teorico y práctico de electrónica para realizar el cableado
+correspondiente del dispositivo.
+Para el cálculo y chequeo de resistencias, corrientes, etc me apoyo en cuaderno y papel, 
+corroborando con la app Crocodile.
+
+También me puse a leer documentación y especificaciones sobre el ESP32:
+https://docs.espressif.com/projects/esp-idf/en/v5.1/esp32/hw-reference/esp32/get-started-devkitc.html
+
+"The pins D0, D1, D2, D3, CMD and CLK are used internally for communication between 
+ESP32 and SPI flash memory. They are grouped on both sides near the USB connector. 
+Avoid using these pins, as it may disrupt access to the SPI flash memory / SPI RAM."
+
+"The pins GPIO16 and GPIO17 are available for use only on the boards with the 
+modules ESP32-WROOM and ESP32-SOLO-1. The boards with ESP32-WROVER modules have 
+the pins reserved for internal use."
+
+25/06/26 
+He investigado sobre los trade of de los sensores pensados e implementados en la maqueta
+inicial para comenzar a tener una idea de las opciones a probar y por donde encarar
+los testeos.
+
+Hay distintas formas de ingeñarselas con sensores sencillos (como el hc-sr04) para una
+pequeña, como usar otro ultrasonico más conectado a la distancia y que este tenga una 
+rotación sobre su eje Y ejecutado por un pequeño servomotor como el sg90.
+Sin embargo estos si bien sirven para una primer maqueta, es completamente inservible
+a nivel práctico real, por lo que investigando llegué a un módulo RD-03D que vendría
+a funcionar tipo radar, con un coste mayor pero incluyendo grandes mejoras.
+Por ahora me apegaré a la maqueta incial, pero estaría bueno luego retomar sobre 
+el modulo de radar e indagar más.
+
+Volviendo al tema de las conexiones de la simulación, cambié los LED RGB por LEDs
+de un color fijo, ya que tome consciencia de que puedo comprar LEDs simples de dif
+colores y son mucho más prácticos, simples y cumplen más fielmente con los colores
+inmutables de las 3 luces de los semáforos, si es que nos apegamos a las luces tradicionales.
+Sino capaz si puede servir 1 RGB o algun tipo de display para una forma más dinámica,
+analogica, simple, amigable y representativa de la relación entre el tiempo (como valor flotante)
+y el estado (color = estado), pero es verdad que esto implica romper con un indice y
+una asociación ya enraigada en la sociedad.

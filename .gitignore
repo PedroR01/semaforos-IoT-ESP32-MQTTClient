@@ -1,0 +1,9 @@
+# PlatformIO build artifacts and downloaded libraries
+.pio/build/
+.pio/libdeps/
+
+# VS Code personal settings (mantener c_cpp_properties.json y extensions.json)
+.vscode/settings.json
+
+# Secrets / credenciales si las tuvieras
+*.env
