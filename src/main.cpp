@@ -13,6 +13,6 @@ void setup() {
 }
 
 void loop() {
-    broker.getClient().loop();
+    broker.loop();
     sensor.update();
 }

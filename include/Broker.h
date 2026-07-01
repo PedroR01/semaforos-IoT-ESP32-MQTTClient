@@ -27,10 +27,30 @@ WiFiClient espClient;
 PubSubClient client;
 StopCallback _onStopCallback;
 
+
+static constexpr unsigned long BOT_TIMEOUT_MS = 400;
+static constexpr unsigned long STATUS_INTERVAL_MS = 3000;
+static constexpr unsigned long WIFI_CONNECT_TIMEOUT_MS = 10000;
+static constexpr unsigned long WIFI_RECONNECT_INTERVAL_MS = 10000;
+static constexpr unsigned long MQTT_RECONNECT_INTERVAL_MS = 5000;
+static constexpr unsigned long DIAG_INTERVAL_MS = 30000;
+
+unsigned long _lastDiagMs = 0;
+unsigned long _wifiReconnectMs = 0;
+unsigned long _mqttReconnectMs = 0;
+bool _lastConnectionState = false;
+bool _connectionStateTracked = false;
+
+bool _connectMqtt();
+void _reconnectWiFi();
+void _subscribeTopics();
+
 public:
   Broker();
-  void begin();
-  PubSubClient& getClient();
+  bool begin();
+  void loop();
+  void diagnose();
+  void printConnectionStatus();
   void setOnStopCallback(StopCallback cb);
   static Broker* brokerInstance;
   void mqtt_callback(char *topic, byte *payload, unsigned int length);
