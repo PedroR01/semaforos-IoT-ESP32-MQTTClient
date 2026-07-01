@@ -2,6 +2,9 @@
 
 Proyecto IoT basado en ESP32 orientado al control inteligente de semáforos mediante sensores físicos y comunicación MQTT.
 
+## Config simulacion (Diagram.json)
+- Al iniciar la simulación en local, modificar (en tiempo de ejecución) el rango de detección simulado del Ultrasonico a valores entre 30 y 80cm para que efectue las acciones de cambios de luces y comunicación. Por fuera de estos valores los toma como que se tiene que poner en rojo.
+
 ## Objetivo
 
 Implementar una arquitectura IoT que permita:

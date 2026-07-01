@@ -37,17 +37,17 @@ void Sensor::update() {
     case TrafficState::GREEN_ACTIVE:
       handleGreenActive();
       break;
-    case TrafficState::DETENER_YELLOW:
-      handleDetenerYellow();
+    case TrafficState::STOP_YELLOW:
+      handleStopYellow();
       break;
-    case TrafficState::DETENER_RED:
-      handleDetenerRed();
+    case TrafficState::STOP_RED:
+      handleStopRed();
       break;
   }
 }
 
 void Sensor::handleStop() {
-  transitionToDetenerYellow();
+  transitionToStopYellow();
 }
 
 void Sensor::setLedsOff() {
@@ -109,10 +109,10 @@ void Sensor::transitionToRedIdle() {
   _lastSonarMs = 0;
 }
 
-void Sensor::transitionToDetenerYellow() {
+void Sensor::transitionToStopYellow() {
   clearDisplay();
   setYellowOn();
-  _state = TrafficState::DETENER_YELLOW;
+  _state = TrafficState::STOP_YELLOW;
   _stateStartMs = millis();
 }
 
@@ -148,13 +148,13 @@ void Sensor::handleGreenActive() {
   transitionToRedIdle();
 }
 
-void Sensor::handleDetenerYellow() {
+void Sensor::handleStopYellow() {
   if (millis() - _stateStartMs >= YELLOW_DURATION_MS) {
     setRedOn();
-    _state = TrafficState::DETENER_RED;
+    _state = TrafficState::STOP_RED;
   }
 }
 
-void Sensor::handleDetenerRed() {
+void Sensor::handleStopRed() {
   // Estado terminal: rojo encendido indefinidamente.
 }

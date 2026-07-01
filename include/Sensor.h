@@ -7,8 +7,8 @@
 enum class TrafficState {
   RED_IDLE,
   GREEN_ACTIVE,
-  DETENER_YELLOW,
-  DETENER_RED
+  STOP_YELLOW,
+  STOP_RED
 };
 
 class Sensor {
@@ -43,12 +43,12 @@ private:
   void clearDisplay();
   void transitionToGreen();
   void transitionToRedIdle();
-  void transitionToDetenerYellow();
+  void transitionToStopYellow();
 
   void handleRedIdle();
   void handleGreenActive();
-  void handleDetenerYellow();
-  void handleDetenerRed();
+  void handleStopYellow();
+  void handleStopRed();
 
 public:
   Sensor(uint8_t pinRed, uint8_t pinYellow, uint8_t pinGreen,
