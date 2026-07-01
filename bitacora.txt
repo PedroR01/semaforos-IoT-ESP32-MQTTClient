@@ -78,3 +78,26 @@ Sino capaz si puede servir 1 RGB o algun tipo de display para una forma más din
 analogica, simple, amigable y representativa de la relación entre el tiempo (como valor flotante)
 y el estado (color = estado), pero es verdad que esto implica romper con un indice y
 una asociación ya enraigada en la sociedad.
+
+30/06/26
+Las conexiones de los LED las tenia al reves (señal a tierra), por lo que las ajuste. También vi algunas
+inconsistencias en la nomenclatura de metodos y funciones en el sensor, por lo que lo cambie.
+
+1/07/26
+Si bien el dispositivo funciona correctamente, no estoy pudiendo ver las impresiones en el monitor serial al
+iniciar la simulación para el chequeo de estados y conexiones tanto a nivel local (vs code) como en la 
+plataforma de wokwi.
+El problema era que en la modificación de las conexiones entre la plataforma y local, de alguna forma borré las
+conexiones virtuales del ESP32 para comunicación serial con el Puerto para el monitor Serial.
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
+
+Probando otra cosa, no sé por qué no tiene relevancia lo que ponga en el username y password de la conexión
+con el broker. Me conecta siempre no importa lo que ingrese en esos campos...
+
+A nivel de experiencia de desarrollo pude configurar para tener el intellisense para C++ y arduino juntos
+, utilizando la extensión de platformio y ahora incluyendo (para cursor) C/C++ de Anysphere junto con clangd.
+Para VS code creo que alcanza solo con tener C/C++ oficial de microsoft, pero está no esta permitida en
+otros IDE.
+Para esto tambien tuve que instalar Platformio en el sistema, permitiendome ejecutar comandos especificos
+como "pio run -t compiledb", e incluyendo el script toolchain.py.

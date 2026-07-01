@@ -76,6 +76,8 @@
     }
   ],
   "connections": [
+    [ "esp:TX", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX", "$serialMonitor:TX", "", [] ],
     [ "esp:GND.2", "bb1:bn.1", "black", [ "v0", "h28.8", "v182.4" ] ],
     [ "bb1:bn.5", "bb1:bn.6", "black", [ "v0" ] ],
     [ "ultrasonic1:VCC", "bb1:tp.21", "red", [ "v0" ] ],

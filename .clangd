@@ -1,0 +1,11 @@
+CompileFlags:
+  CompilationDatabase: .pio/build/esp32dev
+  Add:
+    - --target=xtensa
+    - -Wno-unknown-warning-option
+  Remove:
+    - -fno-tree-switch-conversion
+    - -mtext-section-literals
+    - -mlongcalls
+    - -fstrict-volatile-bitfields
+    - -mdisable-hardware-atomics

@@ -44,8 +44,9 @@ void Broker::begin(){
         }
     }
 
+    String publish_message = "Hi, I'm ESP32-client-" + String(WiFi.macAddress());
     // Publish and subscribe
-    client.publish(topic, "Hi, I'm ESP32 ^^");
+    client.publish(topic, publish_message.c_str());
     client.subscribe(topic);
 }
 
