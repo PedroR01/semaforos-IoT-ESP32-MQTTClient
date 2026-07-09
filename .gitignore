@@ -10,3 +10,4 @@
 
 # Secrets / credenciales si las tuvieras
 *.env
+include/secrets.h

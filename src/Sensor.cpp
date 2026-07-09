@@ -20,8 +20,8 @@ void Sensor::begin() {
   pinMode(_pinYellow, OUTPUT);
   pinMode(_pinGreen, OUTPUT);
 
-  _display.setBrightness(7);
-  clearDisplay();
+  /*_display.setBrightness(7);
+  clearDisplay();*/
   setRedOn();
 
   _state = TrafficState::RED_IDLE;
@@ -44,6 +44,7 @@ void Sensor::update() {
       handleStopRed();
       break;
   }
+  Serial.println("Distancia: " + String(_sonar.ping_cm()));
 }
 
 void Sensor::handleStop() {
@@ -81,7 +82,7 @@ bool Sensor::isObjectInRange() {
   }
   return distance >= MIN_RANGE_CM && distance <= MAX_RANGE_CM;
 }
-
+/*
 void Sensor::updateDisplay(int seconds) {
   if (seconds != _lastDisplayedSeconds) {
     _display.showNumberDec(seconds, true);
@@ -93,24 +94,25 @@ void Sensor::clearDisplay() {
   _display.clear();
   _lastDisplayedSeconds = -1;
 }
+  */
 
 void Sensor::transitionToGreen() {
   setGreenOn();
   _greenEndMs = millis() + (static_cast<unsigned long>(INITIAL_GREEN_TIME_SEC) * 1000UL);
   _lastDisplayedSeconds = -1;
-  updateDisplay(INITIAL_GREEN_TIME_SEC);
+  //updateDisplay(INITIAL_GREEN_TIME_SEC);
   _state = TrafficState::GREEN_ACTIVE;
 }
 
 void Sensor::transitionToRedIdle() {
-  clearDisplay();
+  //clearDisplay();
   setRedOn();
   _state = TrafficState::RED_IDLE;
   _lastSonarMs = 0;
 }
 
 void Sensor::transitionToStopYellow() {
-  clearDisplay();
+  //clearDisplay();
   setYellowOn();
   _state = TrafficState::STOP_YELLOW;
   _stateStartMs = millis();
@@ -134,14 +136,14 @@ void Sensor::handleGreenActive() {
   if (now < _greenEndMs) {
     const int remainingSeconds =
         static_cast<int>((_greenEndMs - now + 999UL) / 1000UL);
-    updateDisplay(remainingSeconds);
+    //updateDisplay(remainingSeconds);
     return;
   }
 
   if (isObjectInRange()) {
     _greenEndMs = now + (static_cast<unsigned long>(TIME_INCREMENT_SEC) * 1000UL);
     _lastDisplayedSeconds = -1;
-    updateDisplay(TIME_INCREMENT_SEC);
+    //updateDisplay(TIME_INCREMENT_SEC);
     return;
   }
 

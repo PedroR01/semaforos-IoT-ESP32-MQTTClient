@@ -4,6 +4,7 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <functional>
+#include <secrets.h>
 
 using StopCallback = std::function<void()>;
 
@@ -11,20 +12,17 @@ class Broker {
 private:
 
 // WiFi
-// const char *ssid = "xxxxx"; // Enter your Wi-Fi name
-// const char *password = "xxxxx";  // Enter Wi-Fi password
-const char *ssid = "Wokwi-GUEST";
-const char *password = "";
+const char *ssid = WIFI_SSID_CODAPLI; // WIFI_SSID_LOCAL
+const char *password = WIFI_PASS_CODAPLI; // WIFI_PASS_LOCAL
 
 // MQTT Broker
-const char *mqtt_broker = "broker.emqx.io";
+const char *broker_ip = EMQX_BROKER; // LOCAL_BROKER
+const int broker_port = 1883; // Convention port for MQTT data transfer
+const char *client_id = "esp32-codapli";
 const char *topic = "semaforo/esp32";
-const char *mqtt_username = "codapli";
-const char *mqtt_password = "codapli";
-const int mqtt_port = 1883;
 
 WiFiClient espClient;
-PubSubClient client;
+PubSubClient mqttClient;
 StopCallback _onStopCallback;
 
 

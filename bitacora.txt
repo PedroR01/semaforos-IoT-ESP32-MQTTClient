@@ -101,3 +101,42 @@ Para VS code creo que alcanza solo con tener C/C++ oficial de microsoft, pero es
 otros IDE.
 Para esto tambien tuve que instalar Platformio en el sistema, permitiendome ejecutar comandos especificos
 como "pio run -t compiledb", e incluyendo el script toolchain.py.
+
+
+6/07/2026
+De forma local estoy intentando comunicarlo por mosquitto MQTT, desactivando el firewall de windows
+, con la ip del dispositivo con el que ejecuto el comando ".\mosquitto_sub.exe -t semaforo/esp32"
+en la carpeta donde tengo instalado mosquitto.
+Estuve también luchando con errores del entorno mismo, como que la extensión clangd me marcaba en el IDE
+una importación como incorrecta y que se solucionó al borrar y volver a pegar la misma linea... raro.
+He aprendido que en C++, la macro F() en println es utilizada principalmente en programación de Arduino
+para ahorrar memoria RAM (SRAM) manteniendo los textos constantes directamente en la memoria Flash.
+Es vital tener esto en cuenta para manejar de forma dinámica la memoría y disminuir los problemas
+que podrían surgir por un mal uso de la misma. En cada compilación del proyecto, platformio indica
+cuanta memoría RAM y Flash está siendo utilizada.
+
+Me dedique a revisar la comunicación ida y vuelta con el broker para comprobar
+en el caso de que se publique otro mensaje en el topico y el cliente del ESP32
+deba actuar en consecuencia.
+
+08/07/2026
+Tuvimos reunion en el CODAPLI con el grupo de investigación y pudimos probar
+el código, funcionamiento y comunicación con el broker público de EMQX y con
+el local de Mosquitto a través de un ESP32 físico. En el modelo fisico Todavía
+no contamos con un display para el tiempo, por lo que su parte del código está
+comentada. Además en el laboratorio pude conseguir un cable de micro-usb a usb
+con transmisión de datos para poder cargar el programa en el ESP32 y ver sus 
+impresiones en el monitor serial (cosa que en los anteriores días no había podido
+ya que tenia un cable que era solo de carga y no permitia transmitir datos).
+
+Comando:
+.\mosquitto_sub -h broker.emqx.io -p 1883 -t "semaforo/esp32" -v
+
+Por otro lado también estuvimos pensando y diseñando como formaremos la primer
+maqueta, con un presupuesto y sensores estimados. Por ahora me falta armar
+la lista de camaras, modulos/drivers y sensores que son más o menos necesarios,
+que opciones hay y su rango de precios para poder presentarlo como gasto presupuestario
+en el laboratorio, lo cual debe ser revisado y confirmado.
+Lo próximo a seguir trabajando por ahora es en conseguir los materiales, armar
+la lista y mejorar el código para que todo sea 100% en local con Mosquitto y 
+se envien y reciban mensajes correctamente y se tomen decisiones de forma inteligente.
