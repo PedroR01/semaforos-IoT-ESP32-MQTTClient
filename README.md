@@ -1,198 +1,45 @@
-# Semaforos-IOT-ESP32-MQTTClient
+# Semáforos IoT ESP32
 
-Proyecto IoT basado en ESP32 orientado al control inteligente de semáforos mediante sensores físicos y comunicación MQTT.
+Monorepositorio para un sistema IoT compuesto por firmware de control, firmware de cámara y procesamiento de visión.
 
-## Config simulacion (Diagram.json)
-- Al iniciar la simulación en local, modificar (en tiempo de ejecución) el rango de detección simulado del Ultrasonico a valores entre 30 y 80cm para que efectue las acciones de cambios de luces y comunicación. Por fuera de estos valores los toma como que se tiene que poner en rojo.
+## Componentes actuales
 
-## Objetivo
+- `firmware/sensor-controller/`: firmware PlatformIO para ESP32 DevKit, sensores, LEDs, display y MQTT.
+- `firmware/camera-server/`: firmware PlatformIO para ESP32-CAM y ESP32-S3 que publica un stream MJPEG.
+- `vision/detector/detect_esp32cam.py`: consumidor Python del stream con OpenCV y YOLO.
 
-Implementar una arquitectura IoT que permita:
+Los componentes siguen siendo proyectos independientes. No existe todavía una integración implementada entre la detección YOLO y el controlador MQTT del semáforo.
 
-* Detectar presencia de vehículos y peatones.
-* Controlar estados de semáforos.
-* Publicar eventos mediante MQTT.
-* Simular el sistema completo utilizando Wokwi.
-* Facilitar la migración futura a hardware físico.
+## Validación rápida
 
----
-
-# Tecnologías utilizadas
-
-## Hardware
-
-* ESP32 DevKit V4
-
-## Sensores
-
-* HC-SR04 (Ultrasonido)
-* PIR (Movimiento)
-
-## Actuadores
-
-* 3 LEDs RGB
-* Display 7 segmentos (4 dígitos)
-
-## Software
-
-* Arduino Framework
-* PlatformIO
-* Wokwi Simulator
-* MQTT
-* PubSubClient
-
----
-
-# Estructura del proyecto
+Desde cada proyecto PlatformIO:
 
 ```text
-src/
-├── main.cpp
-└── Broker.cpp
-
-include/
-└── Broker.h
-
-diagram.json
-
-wokwi.toml
-
-platformio.ini
+pio run -d firmware/sensor-controller -e esp32dev
+pio run -d firmware/camera-server -e esp32cam
+pio run -d firmware/camera-server -e esp32s3
 ```
 
-## src/main.cpp
+Entornos de cámara disponibles: `esp32cam` y `esp32s3`.
 
-Punto de entrada principal del firmware.
+El detector requiere un entorno Python con OpenCV, NumPy y Ultralytics. La declaración inicial está en `vision/detector/pyproject.toml`; el lockfile y la política de distribución del modelo se completarán antes de incorporarlo a CI.
 
-Responsabilidades:
+## Entorno reproducible
 
-* Inicialización del sistema.
-* Inicialización del broker MQTT.
-* Ejecución continua del cliente MQTT.
+El proyecto incluye un Dev Container en `.devcontainer/` para instalar PlatformIO Core, las dependencias Python del detector y las extensiones principales de VS Code. Con Docker Desktop iniciado y la extensión Dev Containers instalada, abrir la raíz y ejecutar `Dev Containers: Reopen in Container`.
 
-## include/Broker.h
+La inicialización crea configuraciones locales a partir de los ejemplos sin credenciales reales y compila `esp32dev` y `esp32cam`. La carga del firmware y el monitor serie permanecen en el sistema anfitrión porque el acceso a puertos USB/COM desde Docker en Windows requiere una configuración adicional.
 
-Define la clase Broker.
+## Organización objetivo
 
-Responsabilidades:
+La migración progresiva apunta a separar:
 
-* Configuración WiFi.
-* Configuración MQTT.
-* Declaración de callbacks.
-* Gestión de conexión.
+- `firmware/`: proyectos PlatformIO independientes.
+- `vision/`: detector y pruebas Python.
+- `protocol/mqtt/`: contrato versionado de comunicación.
+- `docs/`: hardware, operación y decisiones arquitectónicas.
+- `config/examples/`: ejemplos sin credenciales reales.
 
-## src/Broker.cpp
+## Seguridad
 
-Implementación de la lógica MQTT.
-
-Responsabilidades:
-
-* Conexión WiFi.
-* Conexión MQTT.
-* Publicación.
-* Suscripción.
-* Recepción de mensajes.
-
-## diagram.json
-
-Describe el circuito virtual utilizado por Wokwi.
-
-Actualmente contiene:
-
-* ESP32 DevKit
-* Sensor HC-SR04
-* Sensor PIR
-* 3 LEDs RGB
-* Display 7 segmentos
-
-También define las conexiones eléctricas entre componentes.
-
-## platformio.ini
-
-Configuración de compilación.
-
-Parámetros principales:
-
-* Plataforma ESP32.
-* Framework Arduino.
-* Dependencias externas.
-* Configuración del monitor serie.
-
-## wokwi.toml
-
-Configuración de integración con Wokwi.
-
-Permite:
-
-* Localizar firmware.bin.
-* Localizar firmware.elf.
-* Ejecutar simulaciones desde Cursor.
-
----
-
-# Dependencias
-
-PubSubClient
-
-Instalada automáticamente mediante PlatformIO.
-
----
-
-# Compilación
-
-```bash
-pio run
-```
-
----
-
-# Simulación
-
-1. Compilar el proyecto.
-2. Abrir Command Palette.
-3. Ejecutar:
-
-Wokwi: Start Simulator
-
----
-
-# Comunicación MQTT
-
-Broker:
-
-broker.emqx.io
-
-Puerto:
-
-1883
-
-Topic actual:
-
-emqx/esp32
-
----
-
-# Documentación de configuración
-
-Configurar VS Code para Microsoft C++:
-https://code.visualstudio.com/docs/cpp/config-msvc
-
----
-
-# Futuras mejoras
-
-* Implementar lectura del HC-SR04.
-* Implementar detección mediante PIR.
-* Control de LEDs RGB.
-* Control de display 7 segmentos.
-* Separar responsabilidades mediante clases:
-
-  * WifiManager
-  * MQTTManager
-  * TrafficLightController
-  * SensorManager
-* Persistencia de configuración.
-* OTA Updates.
-
-```
-```
+No introducir credenciales reales, modelos descargados ni resultados de ejecución en commits. Los puertos serie son configuraciones locales y no forman parte de CI.
