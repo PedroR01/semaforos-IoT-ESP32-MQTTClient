@@ -1,0 +1,33 @@
+name: PlatformIO
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  sensor-controller:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PlatformIO
+        run: python -m pip install platformio==6.1.19
+      - name: Build sensor controller
+        run: pio run -d firmware/sensor-controller -e esp32dev
+
+  camera-server:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        environment: [esp32cam, esp32s3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install PlatformIO
+        run: python -m pip install platformio==6.1.19
+      - name: Build camera server
+        run: pio run -d firmware/camera-server -e ${{ matrix.environment }}
