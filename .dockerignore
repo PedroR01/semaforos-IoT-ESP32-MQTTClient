@@ -1,0 +1,10 @@
+.git
+.pio
+.venv
+venv
+__pycache__
+*.egg-info
+**/secrets.h
+models
+output.mp4
+compile_commands.json
