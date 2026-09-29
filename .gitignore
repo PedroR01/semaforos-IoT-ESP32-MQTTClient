@@ -1,13 +1,44 @@
-# PlatformIO build artifacts and downloaded libraries
+# PlatformIO
 .pio/
-.pio
 
-# VS Code generated/personal files
-.vscode/.browse.c_cpp.db*
-.vscode/c_cpp_properties.json
-.vscode/launch.json
-.vscode/ipch
+# Local IDE metadata and compilation databases
+.vscode/
+compile_commands.json
 
-# Secrets / credenciales si las tuvieras
-*.env
-include/secrets.h
+# Shared IntelliSense profiles are portable and intentionally versioned.
+!.vscode/
+!.vscode/c_cpp_properties.json
+!firmware/camera-server/.vscode/
+!firmware/camera-server/.vscode/c_cpp_properties.json
+!firmware/camera-server/.vscode/settings.json
+!firmware/sensor-controller/.vscode/
+!firmware/sensor-controller/.vscode/c_cpp_properties.json
+!firmware/sensor-controller/.vscode/settings.json
+
+# Python environments and caches
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Local configuration and credentials
+.env
+.env.*
+!config/examples/*.example
+**/secrets.h
+**/secrets.local.h
+
+# Runtime outputs
+artifacts/
+output.mp4
+*.log
+
+# Model downloads are managed outside the source tree by default
+models/
+*.pt
+*.onnx
+*.engine

@@ -1,0 +1,6 @@
+{
+  "C_Cpp.default.intelliSenseMode": "gcc-x64",
+  "C_Cpp.default.cppStandard": "gnu++11",
+  "C_Cpp.default.cStandard": "gnu99",
+  "clangd.arguments": ["--background-index"]
+}

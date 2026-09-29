@@ -140,3 +140,48 @@ en el laboratorio, lo cual debe ser revisado y confirmado.
 Lo próximo a seguir trabajando por ahora es en conseguir los materiales, armar
 la lista y mejorar el código para que todo sea 100% en local con Mosquitto y 
 se envien y reciban mensajes correctamente y se tomen decisiones de forma inteligente.
+
+19/08/2026
+Retomando el proyecto pausado por el receso invernal...
+Continuando con el desarrollo del despliegue local con Mosquitto y la comunicación de
+los valores del sensor.
+1. Añadí la direccion de la carpeta donde tengo instalado Mosquitto a la variable de entorno
+Path del sistema para poder utilizar los comandos de Mosquitto desde cualquier ubicación en
+la consola. De esta forma ahora los comandos cambian al formato:
+    mosquitto_sub -t semaforo/esp32
+2.Falta el Broker (-h): En tu comando actual no estás especificando a qué servidor te estás 
+conectando. Si el broker corre en tu misma computadora, añade -h localhost. Si está en la 
+nube o en otra IP, especifícala (ej. -h 192.168.1.50)
+.Comando para publicar: Para enviar mensajes desde la terminal hacia tu ESP32, usarás el 
+comando "mosquitto_pub".
+
+Para resolver los problemas con las extensiones de autocompletado e intellisense para C++
+con la extensión de Anysphere (cursor) tuve que generar una compilación del proyecto y luego
+establecer dichar referencia a la compilación en el archivo .clangd y luego reiniciar la 
+extensión.
+Al usar platformio en este proyecto, para la compilación solamente hace falta ejecutar el comando:
+
+pio run --target compiledb
+
+En el caso de utilizar otra configuración o el entorno nativo de Arduino (Arduino IDE) hace falta
+instalar Arduino CLI, añadir su ubicación de instalación a la var de entorno Path y ejecutar
+los siguientes comandos:
+    1. arduino-cli config init (para inicializar el archivo de config)
+        1b. arduino-cli core update-index (actualiza la caché local de plataformas y librerias disponibles) 
+        --> solo al instalar la CLI por primera vez.
+    2. arduino-cli config set board_manager.additional_urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+    --> añade los paquetes del ESP32 a la config del arduino CLI.
+    3. arduino-cli core update-index
+    4. arduino-cli core install esp32:esp32 --> Instala todos los paquetes para TODAS las placas ESP32...
+    --> En mi caso como es ESP-32S capaz convendría instalar solamente esa y evitar descargas innecesarias...
+    5. arduino-cli board list --> Si este comando detecta tu placa, no importa si la marca como "unknown".
+        5b. arduino-cli board listall | grep -i "esp32" --> Si llegas a necesitar el FQBN de tu tabla para
+        compilar o subir código, podes buscarla con la lista instalada. En mi caso en el grep buscaría algunos
+        como "nodemcu-32s" para algo en especifico, aunque el FQBN del genérico esp32 debería funcionar.
+    6. arduino-cli compile --fqbn esp32:esp32:nodemcu-32s --only-compilation-database
+
+Estos pasos de arduino no funcionan en mi caso porque al usar platformio e implementar un paradigma POO
+mi archivo/script principal es nomenclado main.cpp, mientras que en el entorno de arduino debe tener
+la extensión .ino
+
+Reunión en el laboratorio de CODAPLI y compra de 2 display y 3 camaras Ov2640.

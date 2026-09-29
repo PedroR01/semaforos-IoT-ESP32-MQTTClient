@@ -1,0 +1,12 @@
+# PlatformIO build artifacts and downloaded libraries
+.pio/
+.pio
+
+# VS Code generated/personal files
+.vscode/.browse.c_cpp.db*
+.vscode/launch.json
+.vscode/ipch
+
+# Secrets / credenciales si las tuvieras
+*.env
+include/secrets.h
