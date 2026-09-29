@@ -7,6 +7,18 @@ on:
 jobs:
   sensor-controller:
     runs-on: ubuntu-latest
+    env:
+      WIFI_SSID_LOCAL: ${{ secrets.WIFI_SSID_LOCAL }}
+      WIFI_SSID_CODAPLI: ${{ secrets.WIFI_SSID_CODAPLI }}
+      WIFI_SSID_MOBILE: ${{ secrets.WIFI_SSID_MOBILE }}
+      WIFI_SSID_WOKWI: ${{ vars.WIFI_SSID_WOKWI || 'Wokwi-GUEST' }}
+      WIFI_PASS_LOCAL: ${{ secrets.WIFI_PASS_LOCAL }}
+      WIFI_PASS_CODAPLI: ${{ secrets.WIFI_PASS_CODAPLI }}
+      WIFI_PASS_MOBILE: ${{ secrets.WIFI_PASS_MOBILE }}
+      WIFI_PASS_WOKWI: ${{ vars.WIFI_PASS_WOKWI || '' }}
+      EMQX_BROKER: ${{ vars.EMQX_BROKER || 'broker.emqx.io' }}
+      LOCAL_BROKER: ${{ vars.LOCAL_BROKER || '192.0.2.1' }}
+      MQTT_TOPIC: ${{ vars.MQTT_TOPIC || 'semaforo/esp32' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -14,11 +26,39 @@ jobs:
           python-version: "3.12"
       - name: Install PlatformIO
         run: python -m pip install platformio==6.1.19
+      - name: Generate secrets.h
+        run: |
+          cat > firmware/sensor-controller/include/secrets.h <<EOF
+          #pragma once
+
+          #define WIFI_SSID_LOCAL "$WIFI_SSID_LOCAL"
+          #define WIFI_SSID_CODAPLI "$WIFI_SSID_CODAPLI"
+          #define WIFI_SSID_MOBILE "$WIFI_SSID_MOBILE"
+          #define WIFI_SSID_WOKWI "$WIFI_SSID_WOKWI"
+
+          #define WIFI_PASS_LOCAL "$WIFI_PASS_LOCAL"
+          #define WIFI_PASS_CODAPLI "$WIFI_PASS_CODAPLI"
+          #define WIFI_PASS_MOBILE "$WIFI_PASS_MOBILE"
+          #define WIFI_PASS_WOKWI "$WIFI_PASS_WOKWI"
+
+          #define EMQX_BROKER "$EMQX_BROKER"
+          #define LOCAL_BROKER "$LOCAL_BROKER"
+          #define MQTT_TOPIC "$MQTT_TOPIC"
+          EOF
       - name: Build sensor controller
         run: pio run -d firmware/sensor-controller -e esp32dev
 
   camera-server:
     runs-on: ubuntu-latest
+    env:
+      WIFI_SSID_LOCAL: ${{ secrets.WIFI_SSID_LOCAL }}
+      WIFI_SSID_CODAPLI: ${{ secrets.WIFI_SSID_CODAPLI }}
+      WIFI_SSID_MOBILE: ${{ secrets.WIFI_SSID_MOBILE }}
+      WIFI_SSID_WOKWI: ${{ vars.WIFI_SSID_WOKWI || 'Wokwi-GUEST' }}
+      WIFI_PASS_LOCAL: ${{ secrets.WIFI_PASS_LOCAL }}
+      WIFI_PASS_CODAPLI: ${{ secrets.WIFI_PASS_CODAPLI }}
+      WIFI_PASS_MOBILE: ${{ secrets.WIFI_PASS_MOBILE }}
+      WIFI_PASS_WOKWI: ${{ vars.WIFI_PASS_WOKWI || '' }}
     strategy:
       matrix:
         environment: [esp32cam, esp32s3]
@@ -29,5 +69,23 @@ jobs:
           python-version: "3.12"
       - name: Install PlatformIO
         run: python -m pip install platformio==6.1.19
+      - name: Generate secrets.h
+        run: |
+          cat > firmware/camera-server/include/secrets.h <<EOF
+          #ifndef SECRETS_H
+          #define SECRETS_H
+
+          #define WIFI_SSID_LOCAL "$WIFI_SSID_LOCAL"
+          #define WIFI_SSID_CODAPLI "$WIFI_SSID_CODAPLI"
+          #define WIFI_SSID_MOBILE "$WIFI_SSID_MOBILE"
+          #define WIFI_SSID_WOKWI "$WIFI_SSID_WOKWI"
+
+          #define WIFI_PASS_LOCAL "$WIFI_PASS_LOCAL"
+          #define WIFI_PASS_CODAPLI "$WIFI_PASS_CODAPLI"
+          #define WIFI_PASS_MOBILE "$WIFI_PASS_MOBILE"
+          #define WIFI_PASS_WOKWI "$WIFI_PASS_WOKWI"
+
+          #endif
+          EOF
       - name: Build camera server
         run: pio run -d firmware/camera-server -e ${{ matrix.environment }}
