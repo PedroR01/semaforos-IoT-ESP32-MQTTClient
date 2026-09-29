@@ -13,34 +13,80 @@ Los componentes son proyectos independientes. La detección YOLO todavía no pub
 ## Requisitos
 
 - Git.
-- Python entre 3.11 y 3.13 para el detector.
-- VS Code con la extensión PlatformIO IDE, o PlatformIO Core instalado en el PATH.
+- Tener python instalado (preferentemente v 3.12)
 - Para la simulación: extensión Wokwi para VS Code y una cuenta de Wokwi si la extensión la solicita.
 - Para cargar firmware: el ESP32 correspondiente, un cable USB de datos y el controlador USB-serie que necesite la placa.
 
 Este proyecto no requiere Docker. PlatformIO instala automáticamente el framework, toolchain y librerías declaradas por cada firmware; el detector instala sus dependencias en un entorno virtual de Python.
 
-### PlatformIO
+## Instalación e inicialización
 
-La opción más sencilla es instalar la extensión **PlatformIO IDE** en VS Code. Como alternativa, instalar PlatformIO Core desde una terminal:
+Ejecutar estos pasos desde la raíz del repositorio. La guía usa Python 3.12 para que todos los contribuyentes trabajen con una versión compatible y reproducible.
+
+### 1. Instalar Python
+
+Si Python 3.12 todavía no está instalado, hacerlo con el lanzador de Python:
 
 ```powershell
-python -m pip install --upgrade platformio
-pio --version
+py install 3.12
 ```
 
-Las dependencias de cada firmware se descargan al ejecutar su primera compilación.
+### 2. Crear y activar el entorno virtual
 
-### Credenciales locales
-
-Antes de compilar hardware real, crear los archivos de secretos a partir de sus ejemplos y reemplazar los valores de WiFi. Estos archivos están ignorados por Git:
+Crear el entorno una sola vez:
 
 ```powershell
-Copy-Item firmware/sensor-controller/include/secrets.h.example firmware/sensor-controller/include/secrets.h
-Copy-Item firmware/camera-server/include/secrets.h.example firmware/camera-server/include/secrets.h
+py -3.12 -m venv .venv
+```
+
+Activarlo según la terminal utilizada:
+
+**CMD:**
+
+```bat
+.venv\Scripts\activate.bat
+```
+
+**PowerShell:**
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+Si PowerShell bloquea la activación de scripts, usar directamente `.venv\Scripts\python.exe` y `.venv\Scripts\pio.exe` en los comandos de las siguientes secciones.
+
+### 3. Instalar las dependencias
+
+Con el entorno virtual activado, instalar las dependencias del detector y PlatformIO:
+
+```powershell
+python.exe -m pip install --upgrade pip
+python -m pip install -e ./vision/detector
+python -m pip install --upgrade platformio
+```
+
+### 4. Crear los archivos de secretos
+
+Los archivos `secrets.h` están ignorados por Git. Crear una copia para cada funcionalidad antes de compilar.
+
+**CMD o Git Bash:**
+
+```sh
+cp ./firmware/camera-server/include/secrets.h.example ./firmware/camera-server/include/secrets.h
+cp ./firmware/sensor-controller/include/secrets.h.example ./firmware/sensor-controller/include/secrets.h
 ```
 
 Para Wokwi se pueden conservar `Wokwi-GUEST` y la contraseña vacía. Para una placa física, completar el perfil seleccionado por el código (`LOCAL` en ambos firmwares) con la red disponible.
+
+### 5. Preparar los entornos de compilación
+
+Estos comandos descargan e instalan las configuraciones, plataformas y librerías necesarias para cada entorno. Ejecutar los tres si se trabajará con todo el proyecto; de lo contrario, solo el correspondiente a la funcionalidad elegida:
+
+```powershell
+pio run -d firmware/camera-server -e esp32cam
+pio run -d firmware/camera-server -e esp32s3
+pio run -d firmware/sensor-controller -e esp32dev
+```
 
 ## Firmware del controlador de sensores
 
@@ -111,22 +157,7 @@ La computadora que ejecute el detector debe estar en la misma red que la cámara
 
 ## Detector Python
 
-El detector consume el stream MJPEG y ejecuta inferencia local con Ultralytics YOLO. Requiere Python `>=3.11,<3.14`.
-
-Desde la raíz del repositorio, crear y activar un entorno virtual:
-
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -e vision/detector
-```
-
-Si PowerShell bloquea la activación de scripts, puede ejecutarse el intérprete del entorno directamente:
-
-```powershell
-.\.venv\Scripts\python.exe -m pip install -e vision/detector
-```
+El detector consume el stream MJPEG y ejecuta inferencia local con Ultralytics YOLO. Requiere Python `>=3.11,<3.14`; la instalación anterior usa Python 3.12.
 
 Ejecutar el detector apuntando al stream de la cámara:
 
@@ -144,17 +175,9 @@ python vision/detector/detect_esp32cam.py --url http://IP_DE_LA_CAMARA:81/stream
 
 Los modelos descargados y los videos generados no deben incorporarse al repositorio.
 
-## Validación rápida de firmware
+## Validar la instalación
 
-Desde la raíz:
-
-```powershell
-pio run -d firmware/sensor-controller -e esp32dev
-pio run -d firmware/camera-server -e esp32cam
-pio run -d firmware/camera-server -e esp32s3
-```
-
-Para comprobar que el entorno Python está instalado correctamente:
+Para comprobar que el entorno Python y las dependencias del detector están instalados correctamente:
 
 ```powershell
 .\.venv\Scripts\python.exe -c "import cv2, numpy, ultralytics; print('Dependencias del detector OK')"
