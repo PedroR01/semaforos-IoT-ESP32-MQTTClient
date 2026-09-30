@@ -88,7 +88,7 @@ pio run -d firmware/camera-server -e esp32s3
 pio run -d firmware/sensor-controller -e esp32dev
 ```
 
-## Firmware del controlador de sensores
+## Firmware de Sensores y comunicación MQTT -- ESP32dev
 
 El proyecto usa un ESP32 DevKit y el entorno PlatformIO `esp32dev`.
 
@@ -98,6 +98,12 @@ Desde la raíz del repositorio:
 
 ```powershell
 pio run -d firmware/sensor-controller -e esp32dev
+```
+
+### Identificar el puerto COM al que está conectado el ESP32
+
+```powershell
+pio device list
 ```
 
 ### Cargar en el ESP32 y abrir el monitor serie
@@ -120,7 +126,7 @@ El archivo `platformio.ini` contiene `/dev/ttyUSB1` como valor de desarrollo par
 
 Las dependencias `PubSubClient`, `TM1637` y `NewPing` se instalan automáticamente desde `platformio.ini`.
 
-## Firmware de cámara
+## Firmware Cámara -- ESP32-CAM y ESP32-S3
 
 El servidor soporta dos entornos PlatformIO:
 
@@ -136,9 +142,15 @@ pio run -d firmware/camera-server -e esp32cam
 pio run -d firmware/camera-server -e esp32s3
 ```
 
+### Identificar el puerto COM al que está conectado el ESP32
+
+```powershell
+pio device list
+```
+
 ### Cargar y obtener la URL del stream
 
-Para una AI Thinker ESP32-CAM:
+Para una AI Thinker **_ ESP32-CAM _**:
 
 ```powershell
 pio run -d firmware/camera-server -e esp32cam -t upload --upload-port COMx
@@ -155,7 +167,7 @@ http://IP_DE_LA_CAMARA:81/stream
 
 La computadora que ejecute el detector debe estar en la misma red que la cámara.
 
-## Detector Python
+## Detector Python para Firmware Cámara
 
 El detector consume el stream MJPEG y ejecuta inferencia local con Ultralytics YOLO. Requiere Python `>=3.11,<3.14`; la instalación anterior usa Python 3.12.
 
