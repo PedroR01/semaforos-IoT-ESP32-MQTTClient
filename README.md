@@ -6,9 +6,11 @@ Monorepositorio para un sistema IoT compuesto por firmware de control, firmware 
 
 - `firmware/sensor-controller/`: firmware PlatformIO para ESP32 DevKit, sensores, LEDs, display y MQTT.
 - `firmware/camera-server/`: firmware PlatformIO para ESP32-CAM y ESP32-S3 que publica un stream MJPEG.
-- `vision/detector/detect_esp32cam.py`: consumidor Python del stream con OpenCV y YOLO.
+- `vision/detector/`: scripts Python `detect_esp32cam.py` y `cam_detection.py`, consumidores del stream con OpenCV y YOLO.
 
 Los componentes son proyectos independientes. La detección YOLO todavía no publica MQTT ni controla el semáforo.
+
+El desarrollo activo se centra en `camera-server` y `vision/detector`, con una arquitectura objetivo que permita seleccionar procesamiento externo o local en un ESP compatible al compilar el firmware. El selector todavía no está implementado. El simulador `sensor-controller` queda pausado y conserva sus configuraciones de hardware y experiencia MQTT como referencia. Los requisitos, hardware, métricas, arquitectura y puesta en marcha se centralizan en la [documentación del sistema](docs/README.md); la prioridad actual es funcionalidad y escalabilidad.
 
 ## Requisitos
 
@@ -207,4 +209,4 @@ La migración progresiva apunta a separar:
 
 ## Seguridad
 
-No introducir credenciales reales, modelos descargados ni resultados de ejecución en commits. Los puertos serie son configuraciones locales y no forman parte de CI. La configuración MQTT actual usa `broker.emqx.io:1883` y el tópico legado `semaforo/esp32`; su contrato y limitaciones están documentados en `protocol/mqtt/README.md`.
+No introducir credenciales reales, modelos descargados ni resultados de ejecución en commits. Los puertos serie son configuraciones locales y no forman parte de CI. El controlador legado selecciona `LOCAL_BROKER:1883` y utiliza el tópico fijo `semaforo/esp32`; su contrato está descrito en `protocol/mqtt/README.md`. La integración MQTT de cámara y visión está pendiente y se especifica en `docs/README.md`.

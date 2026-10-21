@@ -22,3 +22,21 @@ Antes de conectar YOLO con el semáforo se debe aprobar una versión del contrat
 Cada mensaje deberá definir versión, `device_id`, `event_id`, timestamp, origen, unidades, QoS, retención, duplicados, autorización y comportamiento ante errores. Las detecciones deben comenzar como telemetría; no deben accionar hardware hasta especificar política y estado seguro.
 
 La compatibilidad con `semaforo/esp32` y `Detener` debe implementarse, si se necesita, mediante un adaptador explícito y temporal.
+
+## Probar conexión Local MQTT
+
+### EMQX server
+
+Utilizar servidor EMQX:
+mosquitto_sub -h broker.emqx.io -p 1883 -t "semaforo/esp32" -v
+
+mosquitto_pub -h broker.emqx.io -p 1883 -t "semaforo/esp32" -m "Beee"
+
+### Localhost server
+
+Levantar servidor local (localhost) en puerto 1883:
+python -m http.server 1883
+
+mosquitto_sub -h localhost -t "semaforo/esp32" -v
+
+mosquitto_pub -h localhost -t "semaforo/esp32" -m "Beee"
