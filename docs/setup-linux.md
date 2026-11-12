@@ -1,6 +1,6 @@
 # Puesta en marcha en Linux (CachyOS / Arch)
 
-Redactada el 2026-11-08. **Estado de verificación: los comandos no se ejecutaron todavía** (la sesión que los redactó no tenía acceso a USB, red ni GPU). Al correrlos, registrar al final qué funcionó y qué no. Para Windows ver [setup-windows.md](setup-windows.md).
+Redactada el 2026-11-08. **Estado de verificación (actualizado el 2026-11-12): el propietario ejecutó la cadena ESP32-CAM → detector con YOLO real → Mosquitto local → `mosquitto_sub` el 2026-11-11 y funcionó como se esperaba, con dos hallazgos menores (H-A y H-B, ver §6; sus correcciones están en curso y sin verificar con hardware).** Los demás pasos siguen sin registro; ver la tabla de §6. Al correrlos, registrar al final qué funcionó y qué no. Para Windows ver [setup-windows.md](setup-windows.md).
 
 Todos los comandos se ejecutan desde la raíz del repositorio. El shell de login es fish, por eso no se usa `source .venv/bin/activate`: se llama directamente a `.venv/bin/python`.
 
@@ -31,7 +31,7 @@ uv pip install --python .venv/bin/python numpy opencv-python "ultralytics>=8.3,<
 
 - No usar `pip install -e vision/detector`: falla por tener dos módulos de nivel superior (problema registrado en [reference.md](reference.md) §7).
 - `lap` se instala a mano: el seguimiento lo necesita y un venv de `uv` no trae `pip` para que Ultralytics lo instale solo.
-- `paho-mqtt` se agrega para el hito M1; los scripts actuales todavía no lo usan.
+- `paho-mqtt` lo usa `cam_detection.py` cuando se pasa `--mqtt-host` (hito M1); la publicación contra Mosquitto local se verificó el 2026-11-11 (§4 y §6).
 - En Linux, `torch` se instala con soporte CUDA por defecto (varios GB). Si el driver NVIDIA funciona (`nvidia-smi` responde), la RTX 2060 se usa automáticamente. Si no hay driver o se prefiere CPU:
 
 ```bash
@@ -105,7 +105,7 @@ El stream está en `http://IP_CAMARA:81/stream`.
 - Cerrar antes el navegador que esté mostrando el stream; no está validado con dos clientes.
 - Si `--show` falla por Qt en Wayland: `QT_QPA_PLATFORM=xcb .venv/bin/python ...`.
 - Probar sin cámara pasando un archivo de video como `--url` (previsto en RF-06; aún sin verificar).
-- `cam_detection.py` imprime snapshots JSON por consola. Con `--mqtt-host` además publica (hito M1, **escrito el 2026-11-08, sin probar contra broker**):
+- `cam_detection.py` imprime snapshots JSON por consola. Con `--mqtt-host` además publica (hito M1, escrito el 2026-11-08; **verificado contra Mosquitto local el 2026-11-11**, ver receta abajo):
 
 ```bash
 mosquitto_sub -h 127.0.0.1 -t 'trafico/v1/+/detections' -v      # terminal 1
@@ -114,8 +114,45 @@ mosquitto_sub -h 127.0.0.1 -t 'trafico/v1/+/detections' -v      # terminal 1
 ```
 
 - Sin cámara: `--url archivo.mp4` (RF-06). Sin `--mqtt-host` no se publica nada.
-- Cada ~1 s llega un JSON con `status: ok` y conteos (ceros si no hay vehículos). Si el stream cae o la inferencia falla llega `status: unavailable` sin `metrics`. Al cerrar el detector llega un último `unavailable`.
-- Falta instalar `paho-mqtt` (paso §2) antes de la primera prueba.
+- Cada ~1 s llega un JSON con `status: ok` y conteos (ceros si no hay vehículos). Si el stream cae o la inferencia falla llega `status: unavailable` sin `metrics`. Al cerrar el detector debería llegar un último `unavailable`, pero **con Ctrl+C no llegó** (H-B, §6; corrección en curso, sin verificar). El controlador no debe depender de ese mensaje: el modo seguro se basa en la vigencia T del dato.
+- `paho-mqtt` debe estar instalado (paso §2).
+- Hallazgo H-A: tras un tiempo sin conexión al stream, el detector cierra la ventana y termina (hace `break` tras `--reconnect` aperturas fallidas). Corrección en curso (reintento indefinido con espera creciente, RNF-01/RNF-02); sin verificar.
+
+Receta verificada el 2026-11-11 (CachyOS, ESP32-CAM-MB con OV2640 real, Mosquitto local, YOLO real). Con `IP_CAMARA` reemplazada por la IP que imprime el monitor serie:
+
+```bash
+mosquitto_sub -t 'trafico/v1/#' -v                                                       # terminal 1
+.venv/bin/python vision/detector/cam_detection.py --url http://IP_CAMARA:81/stream \
+  --mqtt-host localhost --camera-id cam-01 --approach-id acceso-01 --show                # terminal 2
+```
+
+(En el registro del propietario el comando del detector se anotó con `cam_detection.py --mqtt-host localhost --camera-id cam-01 --approach-id acceso-01 --show`; la URL del stream es `:81/stream` de la cámara.)
+
+### Controlador y semáforo simulado (M2)
+
+Tres procesos independientes unidos por MQTT (`trafico/v1/...`, ver [protocolo](../protocol/mqtt/README.md) §2). Solo necesitan `paho-mqtt` (ya instalado en el entorno del detector, §2); no hay que instalar nada más. Se ejecutan desde la raíz del repositorio, cada uno en su terminal, con Mosquitto escuchando en el 1883 (§5):
+
+```bash
+mosquitto_sub -h 127.0.0.1 -t 'trafico/v1/inter-01/#' -v                       # terminal 1: commands y state
+.venv/bin/python control/traffic_light_sim.py --mqtt-host 127.0.0.1             # terminal 2: semáforo
+.venv/bin/python control/traffic_controller.py --mqtt-host 127.0.0.1            # terminal 3: controlador
+.venv/bin/python vision/detector/cam_detection.py --url http://IP_CAMARA:81/stream \
+  --mqtt-host 127.0.0.1 --camera-id cam-01 --approach-id acceso-01              # terminal 4: acceso 1 real
+```
+
+- Orden de arranque recomendado: broker, semáforo, controlador y por último el detector (el semáforo debe existir antes para que el primer verde no llegue a un todo-rojo inicial sin cumplir).
+- Valores por defecto: `--intersection-id inter-01`, `--approaches acceso-01,acceso-02`, verde 5-20 s, amarillo 2 s, todo-rojo 2 s, vigencia `--fresh 5`, ciclo fijo `--fixed-green 10`. Flags del controlador desde la corrección 2026-11-12: `--demand-present 0.5` (vehículos suavizados desde los que un acceso "tiene demanda"), `--switch-margin 0.5` (ventaja mínima sobre el verde actual para cambiar por demanda), `--fail-after 10` (s sin `ok` de un acceso para pasar a ciclo fijo) y `--recover-after 3` (s seguidos con `ok` en todos para volver a adaptativo); `--verbose` muestra el detalle por mensaje. Ver `--help` de cada script. Si cambias tiempos, usa los mismos en ambos procesos (el semáforo valida con ellos).
+- El controlador arranca en `mode: fixed` / `fixed_cycle_no_data` y pasa a adaptativo cuando **todos** los accesos configurados llevan 3 s con datos vigentes; vuelve a fijo si alguno lleva 10 s sin `ok`. Si ningún acceso tiene demanda, mantiene el verde actual sin comandos (log `reposo: sin demanda, se mantiene ...`).
+- Log del semáforo: `CAMBIO DE FASE` = la fase cambió; `ACTUALIZA MODO` = misma fase con modo o motivo nuevo; `INICIO` = arranque. Los campos `orden: modo=... motivo=...` son los de la última orden recibida (en una transición amarillo/todo-rojo/verde el motivo es el que originó el cambio). No son el modo actual del controlador.
+- Segundo detector simulado con `mosquitto_pub` (repetir cada ~1 s con `seq` creciente y `processed_at` actual en UTC):
+
+```bash
+mosquitto_pub -t trafico/v1/cam-02/detections -m "{\"v\":1,\"camera_id\":\"cam-02\",\"approach_id\":\"acceso-02\",\"session_id\":\"sim-02\",\"seq\":1,\"processed_at\":\"$(date -u +%FT%TZ)\",\"status\":\"ok\",\"metrics\":{\"visible_count\":6}}"
+```
+
+- Probar: dar más conteo a un acceso y ver el cambio de fase tras el verde mínimo; dejar de publicar y ver `fixed_cycle_no_data` pasados 10 s sin `ok`; reanudar y ver `data_recovered` / `adaptive` tras 3 s; reiniciar controlador y semáforo por separado; publicar a mano un comando con dos verdes en `trafico/v1/inter-01/commands` y ver el `RECHAZADO` en el semáforo.
+- Tests de lógica (sin broker): `python3 -m unittest discover -s control/tests` (o `.venv/bin/python -m pytest control/tests`).
+- Sin Last Will del semáforo: si muere, el `state` retenido conserva la última fase.
 
 ## 5. Broker MQTT
 
@@ -140,7 +177,7 @@ Eso solo prueba el transporte. El hito M1 se cierra cuando llegan datos reales d
 
 ### Probar un ESP contra el broker con el firmware legado
 
-Es el único firmware que hoy habla MQTT (NodeMCU `esp32dev`). Cámara y detector todavía no publican.
+Es el único firmware que hoy habla MQTT (NodeMCU `esp32dev`). Es independiente del detector, que ya publica por MQTT (§4).
 
 ```bash
 cp firmware/sensor-controller/include/secrets.h.example firmware/sensor-controller/include/secrets.h
@@ -165,10 +202,16 @@ Completar al ejecutar. Una línea por prueba, con fecha.
 | | `pio run -e esp32cam` | |
 | | Carga y arranque de la ESP32-CAM | |
 | | `/capture` y `:81/stream` desde la PC | |
-| | Detector con `--show` sobre la cámara | |
-| | Mosquitto recibe desde otro equipo/ESP | |
+| 2026-11-11 | Detector con `--show` sobre la cámara (YOLO real, ESP32-CAM-MB/OV2640) | Funcionó como se esperaba, salvo H-A (ver abajo) |
+| | Mosquitto recibe desde otro equipo/ESP | Pendiente de verificar (la prueba del 2026-11-11 fue con broker local, `localhost`) |
 | 2026-11-08 | Tests M1 (`python3 -m unittest discover -s vision/detector/tests`) | 6 de 6 OK con el Python del sistema (solo lógica de payload y conteos; sin cv2/YOLO/paho) |
 | 2026-11-08 | M1 contra Mosquitto real | **No probado**: `.venv/bin/python` no es ejecutable desde el sandbox y `paho-mqtt` no está instalado. Pendiente del propietario |
+| 2026-11-11 | Cadena completa: ESP32-CAM → `:81/stream` → `cam_detection.py --mqtt-host localhost --camera-id cam-01 --approach-id acceso-01 --show` → `mosquitto_sub -t 'trafico/v1/#' -v` (Mosquitto local) | Publicación MQTT recibida en `mosquitto_sub`; "todo funcionó de forma esperada" salvo H-A y H-B. Informado por el propietario. Cierra la prueba pendiente de la fila 2026-11-08 "M1 contra Mosquitto real" |
+| 2026-11-11 | H-A: el detector termina tras un tiempo sin stream | **Corrección en curso, sin verificar con hardware.** Causa (análisis de `cam_detection.py`): tras `--reconnect` (3) aperturas fallidas hace `break`, se cierra la ventana OpenCV y el proceso termina. Contradice RNF-02/RNF-01 (debe reintentar indefinidamente). Corrección prevista: reintento indefinido con espera creciente. Menor según el propietario |
+| 2026-11-11 | H-B: con Ctrl+C no se publica el `unavailable` final | **Corrección en curso, sin verificar con hardware.** Causa: `KeyboardInterrupt` no se captura y se salta el bloque de cierre; además `publish()` es asíncrono y el `disconnect()` inmediato podría perder el mensaje. Corrección prevista: `try/finally`, esperar confirmación de envío y Last Will del detector. El controlador no debe depender de ese mensaje (modo seguro por vigencia T del dato). Menor según el propietario |
+| 2026-11-11 | Cuadro vacío, reconexión del ESP, caída del broker | No registrado |
+| 2026-11-12 | M2: `python3 -m unittest discover -s control/tests` | 36 de 36 OK con Python 3.14 del sistema (lógica pura, sin paho) |
+| 2026-11-12 | M2 contra Mosquitto local (puerto 18830, accesos simulados con `mosquitto_pub`, paho 2.2.0 del entorno del detector vía PYTHONPATH) | Cambio por demanda, `fixed_cycle_no_data` tras T, vuelta a `adaptive`, rechazo de dos verdes y reinicios por separado observados. Pendiente: cadena con detector/ESP real |
 | 2026-11-08 | `command -v uv pio mosquitto` | `uv` y `mosquitto` presentes; **`pio` ausente**, sin `~/.platformio` (no se puede compilar ni cargar desde el sandbox) |
 | 2026-11-08 | `id` | Grupos: `pedror01`, `nobody`. **Sin `uucp`** (visto desde el sandbox; confirmar en la terminal propia) |
 | 2026-11-08 | `lsusb` / `/dev/ttyUSB*` | `lsusb` ve un CH340 (`1a86:7523`), pero **no existe `/dev/ttyUSB*`** dentro del sandbox: no se pudo abrir el puerto ni leer el log |
