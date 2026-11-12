@@ -379,3 +379,123 @@ Pendientes: alinear rutas y ambos scripts en el README del detector, describir p
 El Project Mentor analiza y revisa; el Coding Agent implementa una tarea definida. Cuando se solicite un brief o reporte, registrarlo como sección identificada y fechada en este archivo (`reference.md`), con creación/última modificación en ISO 8601 y zona horaria. El chat puede enlazar y resumir el resultado.
 
 Un brief debe indicar objetivo, alcance, archivos confirmados/estimados, verificaciones, fuera de alcance y decisiones bloqueantes reales. No generar un brief ejecutable si falta decidir algo que impide implementarlo; avanzar con lo independiente y señalar la duda concreta. La separación de roles no obliga a crear subagentes ni a pedir aprobación redundante para trabajo ya autorizado.
+
+## 14. M2-ImplementationBrief — Controlador y semáforo simulado
+
+Creado: 2026-11-12T00:00:00-03:00 · Última modificación: 2026-11-12T20:00:00-03:00 · Hito: M2 de [MVP.md](MVP.md) §10 · Requerimientos: RF-08, RF-09, RF-10, RF-11, RNF-01, RNF-08.
+
+### Parámetros confirmados por el propietario (2026-11-12)
+
+| Parámetro | Valor | Significado |
+| --- | --- | --- |
+| Amarillo | 2 s | Transición fija tras el verde |
+| Todo-rojo | 2 s | Despeje con todos los accesos en rojo entre dos verdes |
+| Verde mínimo | 5 s | Una vez dado, el verde no se corta antes |
+| Verde máximo | 20 s | Tope aunque siga habiendo demanda (equidad) |
+| **T (vigencia)** | 5 s | Un dato de `detections` con `processed_at` más viejo que T, o ausente, se considera vencido |
+| Ciclo base de respaldo | 10 s de verde por acceso | Secuencia fija que se usa sin datos vigentes (modo seguro) |
+
+### Objetivo
+
+Un proceso controlador y un semáforo simulado, ambos separados del detector y unidos solo por MQTT, de modo que: (a) con datos vigentes el verde pase al acceso con mayor demanda suavizada respetando mínimo y máximo; (b) al cortar la fuente (más de T s sin dato vigente) el controlador vuelva a ciclo fijo y lo declare; (c) el semáforo rechace secuencias inseguras. Cierre verificable de M2: se observa por MQTT un cambio de fase según la demanda y la vuelta a ciclo fijo al detener el detector.
+
+### Alcance
+
+- **Controlador** (`traffic_controller.py`): se suscribe a `trafico/v1/+/detections` (QoS 0). Mantiene por `approach_id` el último dato (`seq`, `session_id`, `processed_at`, `status`) y una demanda suavizada (media móvil exponencial de `visible_count`; el factor es un detalle de implementación, documentarlo). Descarta duplicados y fuera de orden por `seq` dentro de una `session_id`. Publica en `trafico/v1/<interseccion_id>/commands` (QoS 1, sin retención) un comando por cambio de fase.
+- **Regla de vigencia (propuesta a confirmar al implementar):** si algún acceso configurado carece de dato vigente `ok`, el controlador usa el ciclo base de respaldo para toda la intersección y lo declara en `reason`. Es lo más simple y seguro; un modo degradado por acceso queda fuera.
+- **Semáforo simulado** (`traffic_light_sim.py`): se suscribe a `commands`, valida la secuencia (nunca dos verdes a la vez; verde → amarillo → todo-rojo → siguiente verde; respeta los tiempos), muestra la fase en consola y publica la fase efectiva en `trafico/v1/<interseccion_id>/state` (QoS 1, retenido). Rechaza y registra un comando inseguro sin cambiar de fase. Sin pantalla gráfica; la vista de demo es M3.
+- **Esquema del comando (se fija aquí, actualizar [protocolo](../protocol/mqtt/README.md) al implementar):** `v`, `event_id` (único), `intersection_id`, `issued_at` (ISO 8601 UTC), `phase` (objeto `approach_id → green|yellow|red`), `duration_s`, `reason` (`demand` | `fixed_cycle_no_data` | `max_green` | `min_green_hold` …), `mode` (`adaptive` | `fixed`).
+- **Configuración por argumentos/constantes** con los valores de la tabla; accesos esperados: `acceso-01` y `acceso-02` (el segundo puede llegar de una fuente alternativa en M3; en M2 se prueba con `mosquitto_pub` como segundo detector).
+- Identidades: `client_id` propio por proceso (`controller-<interseccion_id>`, `semaforo-<interseccion_id>`); `interseccion_id` por defecto `inter-01`.
+- Cada proceso se reinicia sin reiniciar los otros (RNF-01); el estado retenido del semáforo permite que un controlador recién iniciado conozca la fase efectiva antes de ordenar.
+- Logs con `approach_id`, `seq` y motivo de cada decisión (RNF-08); JSONL de decisiones es opcional (RF-13).
+
+### Archivos esperados (estimados)
+
+- `control/traffic_controller.py` y `control/traffic_light_sim.py` (carpeta nueva; ubicación a confirmar, el repositorio no tiene aún un directorio de decisión), más `control/pyproject.toml` o reutilizar el entorno del detector si basta `paho-mqtt`.
+- `control/tests/` para la lógica pura (política y validador de secuencia).
+- `protocol/mqtt/README.md` (esquema de `commands` y de `state` del semáforo), `docs/MVP.md` (estado de RF-08 a RF-11) y `docs/setup-linux.md` (receta de arranque).
+
+### Tests esperados
+
+- **Lógica, sin broker (pytest):** política (la demanda mayor gana el verde; respeta verde mínimo y máximo; amarillo y todo-rojo siempre presentes; empate; ambos accesos en cero); vigencia (dato más viejo que T, `unavailable`, acceso sin dato → ciclo fijo); dedupe y `seq` fuera de orden; validador del semáforo (rechaza dos verdes, salto verde → verde sin todo-rojo, tiempos menores al mínimo).
+- **Integración con Mosquitto local:** `mosquitto_pub` simulando dos accesos con conteos distintos y observar `commands` y `state`; detener la publicación y confirmar `fixed_cycle_no_data` tras T s; reanudar y confirmar la vuelta a modo adaptativo; reiniciar controlador y semáforo por separado.
+- **Físicas:** cadena completa con la ESP32-CAM real como acceso 1, y apagar la ESP para provocar `unavailable`. Registrar resultados en `setup-linux.md` §6.
+
+### Fuera de alcance
+
+LEDs o semáforo físico (RF-15), panel/vista de demo (M3), segundo acceso real con S3 (M3, D12), comparación espera fija vs adaptativa (RF-14), `state` con Last Will del ESP (RF-07), política definitiva (P07), persistencia, base de datos, autenticación del broker, métricas de espera/cruce.
+
+### Decisiones bloqueantes
+
+Ninguna. Puntos a confirmar durante la implementación sin detener el trabajo: ubicación de la carpeta `control/` y el criterio "un acceso sin dato fuerza ciclo fijo en toda la intersección".
+
+### Pendiente previo (no es de M2)
+
+Las correcciones del detector (reintento indefinido del stream, cierre limpio con Ctrl+C y Last Will) se aplicaron y el propietario las verificó el 2026-11-12 con ESP32-CAM, Mosquitto local y YOLO reales. El controlador no depende del `unavailable` final, solo de la vigencia T.
+
+**Estado (2026-11-12T00:50:00-03:00):** implementado en `control/` (`traffic_logic.py` lógica pura, `traffic_controller.py`, `traffic_light_sim.py`, `tests/`). Tests de lógica: 36 de 36 OK (`python3 -m unittest discover -s control/tests`). Integración con Mosquitto local (puerto 18830) y accesos simulados con `mosquitto_pub`: cambio de fase por demanda, `fixed_cycle_no_data` tras T s, vuelta a adaptativo, rechazo de dos verdes, reinicio de controlador y semáforo por separado, controlador arrancado con el broker caído. **No verificado:** con el detector real/ESP32-CAM, con Mosquitto en red ni en hardware. Decisiones: carpeta `control/` y "un acceso sin dato fuerza ciclo fijo en toda la intersección" implementadas tal cual; `duration_s` es el mínimo garantizado de la fase; EMA con alpha 0,3; sin Last Will de controlador ni semáforo.
+
+### Corrección 2026-11-12
+
+Creada y última modificación: 2026-11-12T20:00:00-03:00. Hallazgos del ensayo del propietario con una ESP32-CAM real.
+
+- **Causas.** (1) La demanda por acceso es una media móvil exponencial que nunca llega a 0 exacto; `demand > 0` y las comparaciones estrictas sin margen hacían alternar el verde para siempre entre un acceso vacío (residuo) y otro con conteo constante bajo. (2) `mode()` dependía solo de la vigencia instantánea: un `unavailable` o un silencio mayor que T por WiFi débil conmutaba entre fijo y adaptativo sin histéresis. (3) En el semáforo, `FASE`/`MODO` eran tipos de evento pero se leían como valores de modo; en el controlador cada `state` y cada detección ignorada se logueaban en INFO.
+- **Parámetros nuevos** (`Params` y flags del controlador, validados): `demand_present` 0,5 (`--demand-present`; vehículos suavizados desde los que hay demanda), `switch_margin` 0,5 (`--switch-margin`), `fail_after` 10 s (`--fail-after`), `recover_after` 3 s (`--recover-after`). T (`--fresh` 5 s) y los demás valores no cambian. Se exige `fail_after >= T`.
+- **Política.** Cambio por demanda solo si `mejor >= demand_present` y `mejor >= actual + switch_margin` (tras el verde mínimo); por verde máximo solo si `mejor >= demand_present`. **Reposo** (decisión del propietario): sin demanda en ningún acceso se mantiene el verde indefinidamente, sin comandos; el log registra una línea al entrar (`reposo: sin demanda, se mantiene <fase>`) y otra al salir (`reposo terminado`).
+- **Histéresis.** Arranca en fijo. Fijo -> adaptativo cuando todos los accesos llevan `recover_after` seguidos con `ok` vigente (el cronómetro se reinicia si alguno se pierde; se mide por ticks del controlador). Adaptativo -> fijo cuando algún acceso lleva `fail_after` desde el `processed_at` de su último `ok` (incluye la ventana T; un `unavailable` solo cuenta como "sin ok nuevo"; sin ningún `ok` registrado cuenta como perdido). **Gracia** (adaptativo con algún dato vencido, antes de `fail_after`): la ausencia nunca vale cero, no se decide por demanda (con cualquier dato vencido), se mantiene la fase y se rota al siguiente acceso cíclico con `reason=max_green` al cumplirse el verde máximo. Cada transición de modo se registra en el log con su causa. No hay `reason` nuevos.
+- **Logs.** Semáforo: `CAMBIO DE FASE` / `ACTUALIZA MODO` / `INICIO` y `orden: modo=.. motivo=..`. Controlador: `state` en DEBUG; detecciones ignoradas: la primera por (acceso, motivo) y luego un resumen con contador cada ~10 s; `--verbose` da el detalle por mensaje y DEBUG.
+- **Estado.** Implementado. Verificado automáticamente: `python3 -m unittest discover -s control/tests` (lógica con reloj inyectado; incluye el escenario reproducido de 120 s, margen, reposo, histéresis, gracia, flapping y validación de todos los comandos con `SequenceValidator`). **No verificado:** ejecución de `traffic_controller.py` y `traffic_light_sim.py` contra un broker (el entorno de pruebas no tiene `paho`), ni con la ESP32-CAM real; el log real del controlador y la sensibilidad de `demand_present`/`switch_margin` con conteos reales siguen pendientes. Efecto colateral: en el arranque el primer verde sigue el ciclo fijo (la recuperación exige 3 s).
+
+### Revisión del Project Mentor (2026-11-12T01:15:00-03:00)
+
+Una iteración con el Coding Agent; no hizo falta devolver correcciones.
+
+- **Verificado por el mentor:** 36 de 36 tests con `python3 -m unittest discover -s control/tests`. Los payloads reales del detector (`build_payload` y `build_will_payload` de `traffic_mqtt.py`) los acepta `ControllerLogic.on_detection`: `ok` fresco mantiene modo adaptativo y el will sin `seq` de un acceso pasa la intersección a ciclo fijo.
+- **Desvío aceptado:** archivo extra `control/traffic_logic.py` (lógica pura testeable sin broker).
+- **Pendiente 1 (bajo):** si el semáforo arranca después del controlador, el primer verde puede llegar antes de que cumpla su todo-rojo inicial; el semáforo lo rechaza y el controlador se resincroniza. Arrancar primero el semáforo evita el `RECHAZADO` del log.
+- **Pendiente 2 (decisión del propietario, fuera de M2):** el semáforo no tiene temporizador propio. Si el controlador muere con una fase verde, esa fase queda indefinidamente. Aceptable en una simulación; antes de actuar sobre hardware requiere un fail-safe (p. ej. pasar a amarillo y todo-rojo tras verde máximo más margen sin comandos) y Last Will del semáforo.
+- **Pendiente 3:** la vigencia compara `processed_at` del detector con el reloj del controlador; con equipos distintos y desfase mayor que T todo queda en ciclo fijo. En la misma PC no aplica.
+- **Sin verificar:** cadena con detector y ESP32-CAM reales conectados al controlador (es el ensayo de M3/M4), Mosquitto en red, y `pytest` con el `.venv` del proyecto (el sandbox no lo ejecuta).
+
+## 15. FailSafe-ImplementationBrief — Latido, lease, watchdog local y Last Will
+
+Creado: 2026-11-12T21:00:00-03:00 · Última modificación: 2026-11-12T21:00:00-03:00 · Continúa M2 (§14). Requerimientos: RNF-01, RNF-02; refuerza RF-10 y RF-11. Es robustez de arquitectura, **no** está en la lista de "debe" del MVP: si el tiempo aprieta se recorta antes que M3/M4 (ver MVP.md §10).
+
+### Problema
+
+Hoy, si el controlador muere con una fase en verde, el semáforo simulado queda en esa fase indefinidamente (no tiene temporizador propio). Tampoco puede distinguir un controlador caído de un silencio normal: con demanda cero el controlador mantiene el verde **sin emitir comandos** (política de reposo), así que "no llegan comandos" no prueba que murió. Además, un `state` retenido de un semáforo caído puede hacer que el controlador adopte una fase que ya no existe.
+
+### Decisiones tomadas (propuestas del mentor; el propietario eligió A+B+C+D el 2026-11-12)
+
+- **A. Latido:** el controlador publica cada 1 s en `trafico/v1/<interseccion_id>/controller/heartbeat` (QoS 0, sin retención) `{v, instance_id, seq, sent_at, mode}`, esté en modo adaptativo o fijo y mientras tenga conexión. `instance_id` es un UUID nuevo en cada arranque.
+- **B. Lease:** el semáforo considera vivo al controlador mientras reciba **cualquier** mensaje suyo (heartbeat o comando) dentro de `lease` segundos (propuesto 5 s). No se agrega `valid_until` por comando: el latido ya renueva el lease y un campo más sería redundante (descartado a propósito). El lease vence también si el broker o la red caen, sin importar la causa.
+- **C. Watchdog local en el semáforo simulado:** al vencer el lease (o al llegar `offline`, ver D) pasa a `mode: failsafe`, `reason: controller_lost` y ejecuta su propia secuencia segura, **nunca saltando de verde a rojo**:
+  - si está en verde: continúa ese verde hasta completar `max_green` desde que empezó la fase (si ya lo superó, pasa enseguida a amarillo), luego amarillo(X) → todo-rojo;
+  - si está en amarillo o todo-rojo: completa la secuencia en curso;
+  - después corre un ciclo fijo local (`fixed_green` por acceso, orden de `--approaches` a partir del siguiente al último verde, con amarillo y todo-rojo) y publica cada cambio en `state` con `mode: failsafe`.
+  Las órdenes locales deben pasar por el mismo `SequenceValidator` (se reusa para garantizar la secuencia segura). Mientras está en failsafe ignora y registra los comandos recibidos.
+- **Salida del failsafe (histéresis):** solo tras `recover_lease` segundos (propuesto 3 s) de lease sano continuo. Al salir conserva la fase y su `since` y desde ese momento valida los comandos normalmente. El controlador ya se resincroniza adoptando el `state` (aviso: su `_set_phase` usa la hora de adopción, no `since`, así que tras el regreso cree que la fase acaba de empezar; es conservador y aceptable).
+- **D. Last Will y estado de proceso:**
+  - Controlador: Last Will y estado `online`/`offline` retenido en `trafico/v1/<interseccion_id>/controller/status` (QoS 1) con `instance_id`. Al llegar `offline` el semáforo adelanta el failsafe sin esperar el lease. El will es complementario: no se dispara si cae el broker y tarda 1,5×keepalive; el watchdog es el que protege.
+  - Semáforo (prioridad menor, **S**): Last Will/`online`/`offline` retenido en `trafico/v1/<interseccion_id>/light/status`; con `offline` el controlador no adopta el `state` retenido ni emite comandos hasta ver `online`.
+  - Opcional (**C**, solo si es trivial): advertir en el log si llegan latidos con dos `instance_id` distintos en menos de `lease` (dos controladores a la vez).
+- Parámetros nuevos como flags con validación: controlador `--heartbeat-every` (1 s); semáforo `--lease` (5 s), `--recover-lease` (3 s) y `--fixed-green` (mismo default que el controlador, 10 s). Validar `lease >= 2 × heartbeat_every`. Son propuestas ajustables; no bloquean.
+
+### Alcance
+
+Archivos esperados: `control/traffic_logic.py` (clase pura `FailSafe` o equivalente con reloj inyectado, sin MQTT; el watchdog local reusa `SequenceValidator`), `control/traffic_controller.py` (latido, will, `online`), `control/traffic_light_sim.py` (suscripción a `controller/#`, watchdog, `light/status`), `control/tests/`, `protocol/mqtt/README.md` (tópicos y payloads nuevos; `mode: failsafe` y `reason: controller_lost` en `state`), `docs/MVP.md` (nota en RF-10/RF-11), `docs/setup-linux.md` (receta y pruebas físicas). No crear otros `.md` en `docs/`.
+
+### Tests esperados
+
+- **Lógica pura (unittest, reloj inyectado):** lease que vence y que se renueva con latido o con comando; silencio de comandos con latidos vivos **no** dispara failsafe (reposo); failsafe desde verde temprano, verde pasado de `max_green`, amarillo y todo-rojo; nunca verde→rojo directo; el ciclo local alterna accesos y toda orden o estado generado es aceptado por `SequenceValidator`; ignorar comandos en failsafe; salida solo tras `recover_lease` continuos y reinicio del cronómetro si el lease vuelve a vencer; `offline` adelanta el failsafe; `instance_id` distinto no rompe nada.
+- **Integración con Mosquitto local (puerto alto en el sandbox si es posible):** matar el controlador con `kill -9` en verde y observar la secuencia del semáforo; detenerlo con Ctrl+C y comparar; apagar el broker; reiniciar el controlador y observar la salida del failsafe.
+- **Físicas (las ejecuta el propietario):** ver la receta que deje el agente en `setup-linux.md`.
+
+### Fuera de alcance
+
+ESP-NOW y coordinación entre semáforos físicos, modo intermitente y monitor de conflictos por hardware, controlador redundante con líder, persistencia, base de datos, autenticación del broker, LEDs, cambios en el detector, política de demanda y sus parámetros (ya corregidos), M3.
+
+### Decisiones bloqueantes
+
+Ninguna. Valores de `lease`, `recover_lease` y `heartbeat_every` son propuestas ajustables con el ensayo.

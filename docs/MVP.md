@@ -98,10 +98,10 @@ Prioridad MoSCoW: **M** debe, **S** debería, **C** podría.
 | RF-05 | El detector publica el estado cada 1 s por MQTT con identidad, `seq` y `session_id` | M | Implementado 2026-11-08 (`traffic_mqtt.py`, `--mqtt-host`); tests de payload OK, sin verificar contra broker |
 | RF-06 | El detector acepta una fuente alternativa (archivo de video o webcam) como acceso | S | Existe en esencia (OpenCV acepta archivos); a verificar |
 | RF-07 | El ESP publica `online/offline` (Last Will) y datos de red | S | Falta |
-| RF-08 | El controlador se suscribe a los accesos y publica la fase por MQTT | M | Falta |
-| RF-09 | Política MVP: ciclo base; verde mínimo y máximo; el acceso con mayor demanda suavizada recibe el verde; amarillo y todo-rojo fijos | M | Falta; política acordada en D11, parámetros por definir |
-| RF-10 | Modo seguro: sin dato vigente (más de T s) el controlador usa ciclo fijo y lo declara | M | Falta |
-| RF-11 | Semáforo simulado que muestra la fase vigente y rechaza secuencias inseguras | M | Falta |
+| RF-08 | El controlador se suscribe a los accesos y publica la fase por MQTT | M | Implementado 2026-11-12 (`control/traffic_controller.py`); probado con Mosquitto local simulando accesos con `mosquitto_pub`; sin verificar con el detector real |
+| RF-09 | Política MVP: ciclo base; verde mínimo y máximo; el acceso con mayor demanda suavizada recibe el verde; amarillo y todo-rojo fijos | M | Implementado 2026-11-12 (parámetros confirmados en reference §14); tests de lógica OK; verificado en Mosquitto local con accesos simulados |
+| RF-10 | Modo seguro: sin dato vigente (más de T s) el controlador usa ciclo fijo y lo declara | M | Implementado 2026-11-12 (T = 5 s); verificado en Mosquitto local cortando la publicación simulada; sin verificar con el detector/ESP real |
+| RF-11 | Semáforo simulado que muestra la fase vigente y rechaza secuencias inseguras | M | Implementado 2026-11-12 (`control/traffic_light_sim.py`); tests del validador OK; rechazo de dos verdes observado en Mosquitto local |
 | RF-12 | Vista de demo: video anotado, conteos por acceso y fase actual | S | Parcial (`--show` dibuja cajas y conteo) |
 | RF-13 | Registro JSONL de detecciones y decisiones | S | Parcial (`--jsonl` para detecciones) |
 | RF-14 | Comparación sobre grabación: espera media con ciclo fijo frente a ciclo adaptativo | S | Falta |
