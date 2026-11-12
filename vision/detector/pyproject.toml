@@ -19,3 +19,8 @@ py-modules = ["cam_detection", "detect_esp32cam", "traffic_mqtt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+]

@@ -47,6 +47,23 @@ def build_payload(*, camera_id: str, approach_id: str, session_id: str, seq: int
     return payload
 
 
+def build_will_payload(*, camera_id: str, approach_id: str, session_id: str) -> dict:
+    """Payload del Last Will: `unavailable` sin `seq` ni `processed_at`.
+
+    El will se fija al conectar y el broker lo emite después, así que no hay un seq
+    ni un instante de procesamiento reales que dar; inventarlos violaría el orden
+    por `seq` y la regla de que `processed_at` es el momento de procesamiento.
+    """
+    return {
+        "v": PAYLOAD_VERSION,
+        "camera_id": camera_id,
+        "approach_id": approach_id,
+        "processing_mode": "external",
+        "session_id": session_id,
+        "status": "unavailable",
+    }
+
+
 class DetectionPublisher:
     """Publica en `<root>/<camera_id>/detections` (QoS 0, sin retención).
 
@@ -64,6 +81,7 @@ class DetectionPublisher:
         self.session_id = session_id
         self.topic = detections_topic(camera_id, root)
         self.seq = 0
+        self._last_info = None
         self.client = mqtt.Client(
             mqtt.CallbackAPIVersion.VERSION2,
             client_id=f"detector-{camera_id}",  # un client_id por proceso
@@ -71,6 +89,9 @@ class DetectionPublisher:
         self.client.on_connect = lambda c, u, f, rc, p=None: print(f"[MQTT] conectado a {host}:{port} ({rc})")
         self.client.on_disconnect = lambda c, u, f, rc, p=None: print(f"[MQTT] desconectado ({rc})")
         self.client.reconnect_delay_set(min_delay=1, max_delay=10)
+        # Last Will: cubre caídas sin despedida (kill -9, corte de red). Antes de connect_async.
+        will = build_will_payload(camera_id=camera_id, approach_id=approach_id, session_id=session_id)
+        self.client.will_set(self.topic, json.dumps(will, ensure_ascii=False), qos=0, retain=False)
         self.client.connect_async(host, port, keepalive=15)
         self.client.loop_start()
 
@@ -79,9 +100,17 @@ class DetectionPublisher:
         payload = build_payload(camera_id=self.camera_id, approach_id=self.approach_id,
                                 session_id=self.session_id, seq=self.seq,
                                 now=now, current=current)
-        self.client.publish(self.topic, json.dumps(payload, ensure_ascii=False), qos=0, retain=False)
+        self._last_info = self.client.publish(
+            self.topic, json.dumps(payload, ensure_ascii=False), qos=0, retain=False)
         return payload
 
-    def close(self):
+    def close(self, timeout: float = 2.0):
+        # publish() es asíncrono: esperar el envío del último mensaje antes de desconectar.
+        # Sin conexión no bloquea más que `timeout` (o falla de inmediato y se ignora).
+        if self._last_info is not None:
+            try:
+                self._last_info.wait_for_publish(timeout=timeout)
+            except Exception as e:
+                print(f"[MQTT] último mensaje sin confirmar: {e}")
         self.client.loop_stop()
         self.client.disconnect()

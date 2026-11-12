@@ -4,8 +4,8 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from traffic_mqtt import build_payload, detections_topic, new_session_id  # noqa: E402
-from cam_detection import TrafficState  # noqa: E402
+from traffic_mqtt import build_payload, build_will_payload, detections_topic, new_session_id  # noqa: E402
+from cam_detection import BACKOFF_MAX, BACKOFF_MIN, TrafficState, next_backoff  # noqa: E402
 
 KW = dict(camera_id="cam-01", approach_id="acceso-01", session_id="s1", seq=7, now=1_700_000_000.0)
 
@@ -34,6 +34,32 @@ class PayloadTests(unittest.TestCase):
     def test_topic_y_session(self):
         self.assertEqual(detections_topic("cam-01"), "trafico/v1/cam-01/detections")
         self.assertTrue(new_session_id("cam-01", 0).startswith("cam-01-1970"))
+
+
+class WillTests(unittest.TestCase):
+    def test_will_unavailable_sin_metricas_ni_seq(self):
+        w = build_will_payload(camera_id="cam-01", approach_id="acceso-01", session_id="s1")
+        self.assertEqual(w["status"], "unavailable")
+        self.assertEqual(w["v"], 1)
+        self.assertEqual(w["processing_mode"], "external")
+        self.assertEqual((w["camera_id"], w["approach_id"], w["session_id"]), ("cam-01", "acceso-01", "s1"))
+        for k in ("metrics", "seq", "processed_at"):
+            self.assertNotIn(k, w)
+
+    def test_will_coincide_con_unavailable_normal(self):
+        w = build_will_payload(camera_id="c", approach_id="a", session_id="s")
+        p = build_payload(current=None, **{**KW, "camera_id": "c", "approach_id": "a", "session_id": "s"})
+        self.assertEqual(w, {k: v for k, v in p.items() if k not in ("seq", "processed_at")})
+
+
+class BackoffTests(unittest.TestCase):
+    def test_duplica_y_satura(self):
+        w, seq = BACKOFF_MIN, []
+        for _ in range(5):
+            seq.append(w)
+            w = next_backoff(w)
+        self.assertEqual(seq[:3], [0.7, 1.4, 2.8])
+        self.assertEqual(seq[3:], [BACKOFF_MAX, BACKOFF_MAX])
 
 
 class TrafficStateTests(unittest.TestCase):

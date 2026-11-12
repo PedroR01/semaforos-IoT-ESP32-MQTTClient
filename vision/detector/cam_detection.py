@@ -83,6 +83,14 @@ class TrafficState:
         }
 
 
+BACKOFF_MIN, BACKOFF_MAX = 0.7, 5.0
+
+
+def next_backoff(current: float, maximum: float = BACKOFF_MAX) -> float:
+    """Espera siguiente de reconexión: duplica hasta `maximum`."""
+    return min(current * 2, maximum)
+
+
 def parse_args():
     p = argparse.ArgumentParser(description="YOLOv8 + tracking sobre stream MJPEG de ESP32-CAM")
     p.add_argument("--url", required=True, help="URL del stream (p.ej. http://<IP>:81/stream)")
@@ -92,7 +100,8 @@ def parse_args():
     p.add_argument("--save", action="store_true")
     p.add_argument("--show", action="store_true")
     p.add_argument("--max-w", type=int, default=640)
-    p.add_argument("--reconnect", type=int, default=3)
+    p.add_argument("--reconnect", type=int, default=0,
+                   help="Fallos consecutivos de stream antes de salir (0 = reintentar indefinidamente)")
     p.add_argument("--ttl", type=float, default=10.0, help="Segundos sin ver un ID antes de descartarlo")
     p.add_argument("--window", type=float, default=60.0, help="Ventana (s) para únicos recientes")
     p.add_argument("--emit-every", type=float, default=1.0, help="Cada cuántos s emitir el snapshot JSON (0 = no)")
@@ -123,130 +132,136 @@ def main():
         publisher = DetectionPublisher(args.mqtt_host, args.mqtt_port, args.camera_id,
                                        args.approach_id, new_session_id(args.camera_id, time.time()))
 
-    stream = open_capture(args.url)
-    if not stream.isOpened():
-        print(f"[ERROR] No se puede abrir el stream: {args.url}")
-        if publisher:
-            publisher.publish(time.time(), None)
-            publisher.close()
-        return
-
+    stream = open_capture(args.url)  # si no abre, el bucle lo trata como stream sin frames
     writer, writer_failed = None, False
     jsonl = open(args.jsonl, "a", encoding="utf-8") if args.jsonl else None
     prev_time, fps = time.time(), 0.0
     last_emit = 0.0
     last_publish = 0.0
-    reconnects_left = args.reconnect
+    fails = 0  # fallos consecutivos de stream; solo un frame válido lo reinicia
+    wait = BACKOFF_MIN
 
-    while True:
-        ok, frame = stream.read()
-        if not ok or frame is None:
-            print("[WARN] Frame nulo. Intentando reconectar...")
-            # Stream sin frames: se declara unavailable (nunca ceros), a lo sumo 1 por emit-every
-            t = time.time()
-            if publisher and t - last_publish >= args.emit_every:
-                publisher.publish(t, None)
-                last_publish = t
-            stream.release()
-            time.sleep(0.7)
-            stream = open_capture(args.url)
-            if not stream.isOpened():
-                reconnects_left -= 1
-                if reconnects_left < 0:
+    try:
+        while True:
+            ok, frame = stream.read()
+            if not ok or frame is None:
+                fails += 1
+                if args.reconnect > 0 and fails > args.reconnect:
                     print("[ERROR] Sin stream y sin reconexiones. Saliendo...")
                     break
+                print(f"[WARN] Sin frames (fallo {fails}). Reintentando en {wait:.1f}s...")
+                stream.release()
+                # Espera con backoff; sigue publicando unavailable (a lo sumo 1 por emit-every)
+                # y atendiendo la ventana para poder salir con q/Esc.
+                quit_requested = False
+                deadline = time.time() + wait
+                while time.time() < deadline:
+                    t = time.time()
+                    if publisher and t - last_publish >= (args.emit_every or 1.0):
+                        publisher.publish(t, None)
+                        last_publish = t
+                    if args.show:
+                        if cv2.waitKey(50) & 0xFF in (27, ord("q")):
+                            quit_requested = True
+                            break
+                    else:
+                        time.sleep(0.05)
+                if quit_requested:
+                    break
+                wait = next_backoff(wait)
+                stream = open_capture(args.url)
                 continue
-            reconnects_left = args.reconnect
-            continue
+            fails, wait = 0, BACKOFF_MIN
 
-        if args.max_w > 0 and frame.shape[1] > args.max_w:
-            h = int(frame.shape[0] * (args.max_w / frame.shape[1]))
-            frame = cv2.resize(frame, (args.max_w, h), interpolation=cv2.INTER_AREA)
+            if args.max_w > 0 and frame.shape[1] > args.max_w:
+                h = int(frame.shape[0] * (args.max_w / frame.shape[1]))
+                frame = cv2.resize(frame, (args.max_w, h), interpolation=cv2.INTER_AREA)
 
-        # track() en vez de predict(): agrega box.id (persist=True mantiene IDs entre frames)
-        try:
-            results = model.track(
-                source=frame, persist=True, tracker=args.tracker,
-                conf=args.conf, verbose=False, classes=list(CLASES.keys()),
-                max_det=30, iou=0.6, imgsz=320,
-            )
-        except Exception as e:  # inferencia fallida: unavailable, no ceros
-            print(f"[ERROR] Inferencia fallida: {e}")
-            t = time.time()
-            if publisher and t - last_publish >= args.emit_every:
-                publisher.publish(t, None)
-                last_publish = t
-            continue
-        res = results[0]
-        annotated = frame.copy()
-        dets: list[tuple[int | None, str]] = []
+            # track() en vez de predict(): agrega box.id (persist=True mantiene IDs entre frames)
+            try:
+                results = model.track(
+                    source=frame, persist=True, tracker=args.tracker,
+                    conf=args.conf, verbose=False, classes=list(CLASES.keys()),
+                    max_det=30, iou=0.6, imgsz=320,
+                )
+            except Exception as e:  # inferencia fallida: unavailable, no ceros
+                print(f"[ERROR] Inferencia fallida: {e}")
+                t = time.time()
+                if publisher and t - last_publish >= args.emit_every:
+                    publisher.publish(t, None)
+                    last_publish = t
+                continue
+            res = results[0]
+            annotated = frame.copy()
+            dets: list[tuple[int | None, str]] = []
 
-        if res.boxes is not None and len(res.boxes) > 0:
-            # El ID puede faltar (tracker aún sin asignar): igual cuenta como visible.
-            clss = res.boxes.cls.int().tolist()
-            ids = res.boxes.id.int().tolist() if res.boxes.id is not None else [None] * len(clss)
-            confs = res.boxes.conf.tolist()
-            boxes = res.boxes.xyxy.int().tolist()
+            if res.boxes is not None and len(res.boxes) > 0:
+                # El ID puede faltar (tracker aún sin asignar): igual cuenta como visible.
+                clss = res.boxes.cls.int().tolist()
+                ids = res.boxes.id.int().tolist() if res.boxes.id is not None else [None] * len(clss)
+                confs = res.boxes.conf.tolist()
+                boxes = res.boxes.xyxy.int().tolist()
 
-            for tid, cid, cf, (x1, y1, x2, y2) in zip(ids, clss, confs, boxes):
-                nombre = CLASES.get(cid, str(cid))
-                dets.append((tid, nombre))
+                for tid, cid, cf, (x1, y1, x2, y2) in zip(ids, clss, confs, boxes):
+                    nombre = CLASES.get(cid, str(cid))
+                    dets.append((tid, nombre))
 
-                label = f"#{tid if tid is not None else '?'} {nombre} {cf:.2f}"
-                cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
-                cv2.rectangle(annotated, (x1, y1 - th - 6), (x1 + tw + 4, y1), (0, 255, 0), -1)
-                cv2.putText(annotated, label, (x1 + 2, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
+                    label = f"#{tid if tid is not None else '?'} {nombre} {cf:.2f}"
+                    cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+                    cv2.rectangle(annotated, (x1, y1 - th - 6), (x1 + tw + 4, y1), (0, 255, 0), -1)
+                    cv2.putText(annotated, label, (x1 + 2, y1 - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 1)
 
-        now = time.time()
-        state.update(dets, now)
+            now = time.time()
+            state.update(dets, now)
 
-        # Emisión periódica del snapshot (lo que consumirá la lógica del semáforo)
-        if args.emit_every > 0 and now - last_emit >= args.emit_every:
-            snap = state.snapshot(now)
-            line = json.dumps(snap, ensure_ascii=False)
-            print(line)
-            if jsonl:
-                jsonl.write(line + "\n")
-                jsonl.flush()
-            last_emit = now
+            # Emisión periódica del snapshot (lo que consumirá la lógica del semáforo)
+            if args.emit_every > 0 and now - last_emit >= args.emit_every:
+                snap = state.snapshot(now)
+                line = json.dumps(snap, ensure_ascii=False)
+                print(line)
+                if jsonl:
+                    jsonl.write(line + "\n")
+                    jsonl.flush()
+                last_emit = now
 
-        # Frame válido (con o sin vehículos): publica conteos; sin vehículos son ceros.
-        if publisher and now - last_publish >= args.emit_every:
-            publisher.publish(now, dict(state.current))
-            last_publish = now
+            # Frame válido (con o sin vehículos): publica conteos; sin vehículos son ceros.
+            if publisher and now - last_publish >= args.emit_every:
+                publisher.publish(now, dict(state.current))
+                last_publish = now
 
-        fps = fps * 0.9 + (1.0 / max(1e-6, now - prev_time)) * 0.1
-        prev_time = now
-        cv2.putText(annotated, f"FPS: {fps:.1f}  En cuadro: {sum(state.current.values())}  "
-                               f"Unicos: {sum(state.total.values())}",
-                    (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 0, 0), 2)
+            fps = fps * 0.9 + (1.0 / max(1e-6, now - prev_time)) * 0.1
+            prev_time = now
+            cv2.putText(annotated, f"FPS: {fps:.1f}  En cuadro: {sum(state.current.values())}  "
+                                   f"Unicos: {sum(state.total.values())}",
+                        (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 0, 0), 2)
 
-        if args.save and writer is None and not writer_failed:
-            h, w = annotated.shape[:2]
-            writer = cv2.VideoWriter("output.mp4", cv2.VideoWriter.fourcc(*"mp4v"), 20.0, (w, h))
-            if not writer.isOpened():
-                print("[WARN] No se pudo abrir output.mp4 para escritura")
-                writer.release()
-                writer, writer_failed = None, True
+            if args.save and writer is None and not writer_failed:
+                h, w = annotated.shape[:2]
+                writer = cv2.VideoWriter("output.mp4", cv2.VideoWriter.fourcc(*"mp4v"), 20.0, (w, h))
+                if not writer.isOpened():
+                    print("[WARN] No se pudo abrir output.mp4 para escritura")
+                    writer.release()
+                    writer, writer_failed = None, True
 
+            if writer is not None:
+                writer.write(annotated)
+
+            if args.show:
+                cv2.imshow("ESP32-CAM + YOLOv8n", annotated)
+                if cv2.waitKey(1) & 0xFF in (27, ord("q")):
+                    break
+
+    finally:
         if writer is not None:
-            writer.write(annotated)
-
-        if args.show:
-            cv2.imshow("ESP32-CAM + YOLOv8n", annotated)
-            if cv2.waitKey(1) & 0xFF in (27, ord("q")):
-                break
-
-    if writer is not None:
-        writer.release()
-    if jsonl:
-        jsonl.close()
-    stream.release()
-    if publisher:
-        publisher.publish(time.time(), None)  # salida: la fuente deja de estar disponible
-        publisher.close()
-    cv2.destroyAllWindows()
+            writer.release()
+        if jsonl:
+            jsonl.close()
+        stream.release()
+        if publisher:
+            publisher.publish(time.time(), None)  # salida: la fuente deja de estar disponible
+            publisher.close()
+        cv2.destroyAllWindows()
 
 
 if __name__ == "__main__":
