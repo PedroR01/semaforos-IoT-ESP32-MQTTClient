@@ -69,8 +69,8 @@ def main():
             height = int(frame.shape[0] * (args.max_w / frame.shape[1]))
             frame = cv2.resize(frame, (args.max_w, height), interpolation=cv2.INTER_AREA)
 
-        # Inferencia YOLO
-        results = model.predict(source=frame, conf=args.conf, verbose=False, stream=True) # Si se activa stream=True devuelve de a 1 resultado (en lugar de una lista) --> óptimo para videos largos o transmisiones en vivo. Por defecto está en False, lo que devuelve una lista de resultados (aunque sea de un solo frame). Ocupa mucha más RAM.
+        # Inferencia YOLO -- bicicleta: 1 auto: 2 motocicleta: 3 colectivo/bus: 5 camión/truck: 7
+        results = model.predict(source=frame, conf=args.conf, verbose=False, stream=True, classes=[1, 2, 3,5,7], max_det=30, iou=0.6, imgsz=320) # Si se activa stream=True devuelve de a 1 resultado (en lugar de una lista) --> óptimo para videos largos o transmisiones en vivo. Por defecto está en False, lo que devuelve una lista de resultados (aunque sea de un solo frame). Ocupa mucha más RAM.
         annotated = frame.copy()
 
         # Dibujar detecciones

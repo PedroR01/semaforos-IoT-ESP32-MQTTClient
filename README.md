@@ -6,9 +6,11 @@ Monorepositorio para un sistema IoT compuesto por firmware de control, firmware 
 
 - `firmware/sensor-controller/`: firmware PlatformIO para ESP32 DevKit, sensores, LEDs, display y MQTT.
 - `firmware/camera-server/`: firmware PlatformIO para ESP32-CAM y ESP32-S3 que publica un stream MJPEG.
-- `vision/detector/detect_esp32cam.py`: consumidor Python del stream con OpenCV y YOLO.
+- `vision/detector/`: scripts Python `detect_esp32cam.py` y `cam_detection.py`, consumidores del stream con OpenCV y YOLO.
 
 Los componentes son proyectos independientes. La detección YOLO todavía no publica MQTT ni controla el semáforo.
+
+El desarrollo activo se centra en `camera-server` y `vision/detector`, con una arquitectura objetivo que permita seleccionar procesamiento externo o local en un ESP compatible al compilar el firmware. El selector todavía no está implementado. El simulador `sensor-controller` queda pausado y conserva sus configuraciones de hardware y experiencia MQTT como referencia. Los requisitos, hardware, métricas, arquitectura y puesta en marcha se centralizan en la [documentación del sistema](docs/README.md); la prioridad actual es funcionalidad y escalabilidad.
 
 ## Requisitos
 
@@ -20,6 +22,8 @@ Los componentes son proyectos independientes. La detección YOLO todavía no pub
 Este proyecto no requiere Docker. PlatformIO instala automáticamente el framework, toolchain y librerías declaradas por cada firmware; el detector instala sus dependencias en un entorno virtual de Python.
 
 ## Instalación e inicialización
+
+> **Linux:** seguir [docs/setup-linux.md](docs/setup-linux.md). Los pasos de abajo están escritos para Windows/PowerShell (también en [docs/setup-windows.md](docs/setup-windows.md)). Índice de documentación: [docs/README.md](docs/README.md).
 
 Ejecutar estos pasos desde la raíz del repositorio. La guía usa Python 3.12 para que todos los contribuyentes trabajen con una versión compatible y reproducible.
 
@@ -88,7 +92,7 @@ pio run -d firmware/camera-server -e esp32s3
 pio run -d firmware/sensor-controller -e esp32dev
 ```
 
-## Firmware del controlador de sensores
+## Firmware de Sensores y comunicación MQTT -- ESP32dev
 
 El proyecto usa un ESP32 DevKit y el entorno PlatformIO `esp32dev`.
 
@@ -98,6 +102,12 @@ Desde la raíz del repositorio:
 
 ```powershell
 pio run -d firmware/sensor-controller -e esp32dev
+```
+
+### Identificar el puerto COM al que está conectado el ESP32
+
+```powershell
+pio device list
 ```
 
 ### Cargar en el ESP32 y abrir el monitor serie
@@ -120,7 +130,7 @@ El archivo `platformio.ini` contiene `/dev/ttyUSB1` como valor de desarrollo par
 
 Las dependencias `PubSubClient`, `TM1637` y `NewPing` se instalan automáticamente desde `platformio.ini`.
 
-## Firmware de cámara
+## Firmware Cámara -- ESP32-CAM y ESP32-S3
 
 El servidor soporta dos entornos PlatformIO:
 
@@ -136,9 +146,15 @@ pio run -d firmware/camera-server -e esp32cam
 pio run -d firmware/camera-server -e esp32s3
 ```
 
+### Identificar el puerto COM al que está conectado el ESP32
+
+```powershell
+pio device list
+```
+
 ### Cargar y obtener la URL del stream
 
-Para una AI Thinker ESP32-CAM:
+Para una AI Thinker **_ ESP32-CAM _**:
 
 ```powershell
 pio run -d firmware/camera-server -e esp32cam -t upload --upload-port COMx
@@ -155,7 +171,7 @@ http://IP_DE_LA_CAMARA:81/stream
 
 La computadora que ejecute el detector debe estar en la misma red que la cámara.
 
-## Detector Python
+## Detector Python para Firmware Cámara
 
 El detector consume el stream MJPEG y ejecuta inferencia local con Ultralytics YOLO. Requiere Python `>=3.11,<3.14`; la instalación anterior usa Python 3.12.
 
@@ -195,4 +211,4 @@ La migración progresiva apunta a separar:
 
 ## Seguridad
 
-No introducir credenciales reales, modelos descargados ni resultados de ejecución en commits. Los puertos serie son configuraciones locales y no forman parte de CI. La configuración MQTT actual usa `broker.emqx.io:1883` y el tópico legado `semaforo/esp32`; su contrato y limitaciones están documentados en `protocol/mqtt/README.md`.
+No introducir credenciales reales, modelos descargados ni resultados de ejecución en commits. Los puertos serie son configuraciones locales y no forman parte de CI. El controlador legado selecciona `LOCAL_BROKER:1883` y utiliza el tópico fijo `semaforo/esp32`; su contrato está descrito en `protocol/mqtt/README.md`. La integración MQTT de cámara y visión está pendiente; el alcance del MVP está en `docs/MVP.md` y el contrato en `protocol/mqtt/README.md`.

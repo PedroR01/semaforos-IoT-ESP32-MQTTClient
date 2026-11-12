@@ -24,19 +24,11 @@ El build instala el framework Arduino, las toolchains y las bibliotecas declarad
 
 Para obtener el contexto más preciso, abrir como carpeta de VS Code el proyecto correspondiente (`firmware/sensor-controller` o `firmware/camera-server`) y seleccionar el perfil `PlatformIO` adecuado. Si se cambia de placa, regenerar la base local con `pio run -d firmware/camera-server -e esp32s3 -t compiledb` y seleccionar el perfil ESP32-S3.
 
-## Dev Container
+## Entorno de desarrollo
 
-El repositorio incluye un entorno reproducible en `.devcontainer/`. Requiere Docker Desktop y la extensión `Dev Containers` de VS Code. Después de clonar:
+No hay Dev Container: Docker se retiró del proyecto. La puesta en marcha está en [docs/setup-linux.md](docs/setup-linux.md) y [docs/setup-windows.md](docs/setup-windows.md). La carga del firmware y el monitor serie se hacen desde el sistema anfitrión (puertos `/dev/ttyUSB*` en Linux, `COM*` en Windows).
 
-1. Abrir la raíz del repositorio en VS Code.
-2. Ejecutar `Dev Containers: Reopen in Container`.
-3. Esperar a que finalice la inicialización.
-
-El contenedor instala PlatformIO Core, las dependencias Python del detector, C/C++ y Pylance. El script de creación copia `secrets.h.example` como `secrets.h` si todavía no existe y compila `esp32dev` y `esp32cam`. Los archivos locales de credenciales siguen ignorados por Git; reemplazar sus valores antes de usar hardware real.
-
-La carga del firmware y el monitor serie no forman parte del contenedor. En Windows, usar PlatformIO desde el sistema anfitrión para acceder a `COM5` o `COM6`, o configurar un puente USB explícito si se necesita exponer el dispositivo al contenedor. La compilación y el detector Python sí están pensados para ejecutarse dentro del contenedor.
-
-Para compilar manualmente desde el terminal del contenedor:
+Para compilar manualmente:
 
 ```text
 pio run -d firmware/sensor-controller -e esp32dev
