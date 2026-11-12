@@ -4,8 +4,10 @@ import time
 from collections import Counter, deque
 from dataclasses import dataclass
 
-import cv2
-from ultralytics import YOLO
+from traffic_mqtt import DetectionPublisher, new_session_id
+
+# cv2 y ultralytics se importan dentro de main()/open_capture() para poder
+# probar TrafficState y el payload MQTT sin esas dependencias pesadas.
 
 # Clases COCO relevantes -> nombre lógico propio
 CLASES = {1: "bicicleta", 2: "auto", 3: "moto", 5: "colectivo", 7: "camion"}
@@ -38,13 +40,19 @@ class TrafficState:
         self.events: deque[tuple[float, str]] = deque()  # (t_primera_vez, clase)
         self.current = Counter()
 
-    def update(self, dets: list[tuple[int, str]], now: float | None = None):
-        """dets: lista de (track_id, nombre_clase) del frame actual."""
+    def update(self, dets: list[tuple[int | None, str]], now: float | None = None):
+        """dets: lista de (track_id | None, nombre_clase) del frame actual.
+
+        `current` cuenta TODAS las detecciones del frame (visible_count), tengan o no
+        ID de tracking. Solo las que tienen ID alimentan los únicos.
+        """
         now = now if now is not None else time.time()
         self.current = Counter()
 
         for tid, clase in dets:
             self.current[clase] += 1
+            if tid is None:
+                continue
             tr = self.active.get(tid)
             if tr is None:
                 # Primera vez que aparece este ID -> vehículo único nuevo.
@@ -89,35 +97,56 @@ def parse_args():
     p.add_argument("--window", type=float, default=60.0, help="Ventana (s) para únicos recientes")
     p.add_argument("--emit-every", type=float, default=1.0, help="Cada cuántos s emitir el snapshot JSON (0 = no)")
     p.add_argument("--jsonl", default=None, help="Archivo .jsonl donde guardar los snapshots")
+    p.add_argument("--mqtt-host", default=None, help="Broker MQTT; si se omite, no se publica")
+    p.add_argument("--mqtt-port", type=int, default=1883)
+    p.add_argument("--camera-id", default="cam-01", help="Identidad de la cámara en los tópicos")
+    p.add_argument("--approach-id", default="acceso-01", help="Acceso que observa esta cámara")
     return p.parse_args()
 
 
 def open_capture(url: str):
+    import cv2
     cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
     return cap
 
 
 def main():
+    import cv2
+    from ultralytics import YOLO
+
     args = parse_args()
     model = YOLO(args.model)
     state = TrafficState(ttl=args.ttl, window=args.window)
+    publisher = None
+    if args.mqtt_host:
+        publisher = DetectionPublisher(args.mqtt_host, args.mqtt_port, args.camera_id,
+                                       args.approach_id, new_session_id(args.camera_id, time.time()))
 
     stream = open_capture(args.url)
     if not stream.isOpened():
         print(f"[ERROR] No se puede abrir el stream: {args.url}")
+        if publisher:
+            publisher.publish(time.time(), None)
+            publisher.close()
         return
 
     writer, writer_failed = None, False
     jsonl = open(args.jsonl, "a", encoding="utf-8") if args.jsonl else None
     prev_time, fps = time.time(), 0.0
     last_emit = 0.0
+    last_publish = 0.0
     reconnects_left = args.reconnect
 
     while True:
         ok, frame = stream.read()
         if not ok or frame is None:
             print("[WARN] Frame nulo. Intentando reconectar...")
+            # Stream sin frames: se declara unavailable (nunca ceros), a lo sumo 1 por emit-every
+            t = time.time()
+            if publisher and t - last_publish >= args.emit_every:
+                publisher.publish(t, None)
+                last_publish = t
             stream.release()
             time.sleep(0.7)
             stream = open_capture(args.url)
@@ -135,18 +164,27 @@ def main():
             frame = cv2.resize(frame, (args.max_w, h), interpolation=cv2.INTER_AREA)
 
         # track() en vez de predict(): agrega box.id (persist=True mantiene IDs entre frames)
-        results = model.track(
-            source=frame, persist=True, tracker=args.tracker,
-            conf=args.conf, verbose=False, classes=list(CLASES.keys()),
-            max_det=30, iou=0.6, imgsz=320,
-        )
+        try:
+            results = model.track(
+                source=frame, persist=True, tracker=args.tracker,
+                conf=args.conf, verbose=False, classes=list(CLASES.keys()),
+                max_det=30, iou=0.6, imgsz=320,
+            )
+        except Exception as e:  # inferencia fallida: unavailable, no ceros
+            print(f"[ERROR] Inferencia fallida: {e}")
+            t = time.time()
+            if publisher and t - last_publish >= args.emit_every:
+                publisher.publish(t, None)
+                last_publish = t
+            continue
         res = results[0]
         annotated = frame.copy()
-        dets: list[tuple[int, str]] = []
+        dets: list[tuple[int | None, str]] = []
 
-        if res.boxes is not None and res.boxes.id is not None:
-            ids = res.boxes.id.int().tolist()
+        if res.boxes is not None and len(res.boxes) > 0:
+            # El ID puede faltar (tracker aún sin asignar): igual cuenta como visible.
             clss = res.boxes.cls.int().tolist()
+            ids = res.boxes.id.int().tolist() if res.boxes.id is not None else [None] * len(clss)
             confs = res.boxes.conf.tolist()
             boxes = res.boxes.xyxy.int().tolist()
 
@@ -154,7 +192,7 @@ def main():
                 nombre = CLASES.get(cid, str(cid))
                 dets.append((tid, nombre))
 
-                label = f"#{tid} {nombre} {cf:.2f}"
+                label = f"#{tid if tid is not None else '?'} {nombre} {cf:.2f}"
                 cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 0), 2)
                 (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
                 cv2.rectangle(annotated, (x1, y1 - th - 6), (x1 + tw + 4, y1), (0, 255, 0), -1)
@@ -172,6 +210,11 @@ def main():
                 jsonl.write(line + "\n")
                 jsonl.flush()
             last_emit = now
+
+        # Frame válido (con o sin vehículos): publica conteos; sin vehículos son ceros.
+        if publisher and now - last_publish >= args.emit_every:
+            publisher.publish(now, dict(state.current))
+            last_publish = now
 
         fps = fps * 0.9 + (1.0 / max(1e-6, now - prev_time)) * 0.1
         prev_time = now
@@ -200,6 +243,9 @@ def main():
     if jsonl:
         jsonl.close()
     stream.release()
+    if publisher:
+        publisher.publish(time.time(), None)  # salida: la fuente deja de estar disponible
+        publisher.close()
     cv2.destroyAllWindows()
 
 
