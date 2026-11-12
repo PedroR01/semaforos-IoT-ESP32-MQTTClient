@@ -17,7 +17,7 @@ El análisis funcional y arquitectónico normalmente se realiza previamente medi
 
 ## Contexto del proyecto
 
-Monorepositorio de detección y estado del tráfico con cámaras ESP. Consulta la documentación central [docs/README.md](../../docs/README.md) y contrástala con el código real.
+Monorepositorio de detección y estado del tráfico con cámaras ESP. Consulta la documentación central [docs/reference.md](../../docs/reference.md) y contrástala con el código real.
 
 Tecnologías y componentes actuales:
 
@@ -25,7 +25,7 @@ Tecnologías y componentes actuales:
 - Python `>=3.11,<3.14`, OpenCV, NumPy y Ultralytics YOLO en `vision/detector/`.
 - MQTT: experiencia histórica con PubSubClient, Mosquitto y EMQX; no asumir que cámara y detectores ya publican datos.
 - Workflows de GitHub Actions para builds de firmware y verificaciones Python.
-- Windows/PowerShell y entorno `.venv`; no introducir Docker, frameworks web o base de datos por defecto.
+- Linux (CachyOS) o Windows/PowerShell, con entorno `.venv` (ver `docs/setup-linux.md` y `docs/setup-windows.md`); no introducir Docker, frameworks web o base de datos por defecto.
 
 `firmware/sensor-controller/` queda pausado como simulador. Sus configuraciones físicas y MQTT son referencia, no autorización para reactivar sensores, LEDs o su máquina de estados.
 
@@ -39,7 +39,7 @@ Antes de modificar código:
 
 1. lee la tarea recibida;
 2. inspecciona los archivos relevantes del repositorio;
-3. consulta el requisito y, si existe, el brief correspondiente dentro de `docs/README.md`;
+3. consulta el requisito y, si existe, el brief correspondiente dentro de `docs/reference.md`;
 4. revisa tests y convenciones existentes relacionados;
 5. identifica si la implementación solicitada es compatible con el estado actual del código.
 
@@ -274,7 +274,7 @@ Agrega docstrings o comentarios cuando expliquen información que no resulte evi
 
 No agregues comentarios que simplemente traduzcan literalmente cada línea de código.
 
-La organización modular del código es independiente de la documentación: centraliza requisitos, decisiones, briefs y reportes solicitados en `docs/README.md`. Actualiza sus secciones y fechas al cambiar comportamiento, modo o contrato; no crees otros `.md` en `docs/` salvo instrucción del usuario. Mantén los README y el protocolo fuera de esa carpeta alineados cuando el incremento los afecte.
+La organización modular del código es independiente de la documentación: centraliza requisitos, decisiones, briefs y reportes solicitados en `docs/reference.md`. Actualiza sus secciones y fechas al cambiar comportamiento, modo o contrato; no crees otros `.md` en `docs/` salvo instrucción del usuario. El alcance del hito vigente está en `docs/MVP.md` y el contrato MQTT en `protocol/mqtt/README.md`. Mantén los README y el protocolo fuera de esa carpeta alineados cuando el incremento los afecte.
 
 Al reportar resultados distingue lo implementado, lo comprobado automáticamente, lo validado en hardware y lo pendiente. Si se solicita un reporte o brief documental, registra una sección identificada con creación/última modificación ISO 8601 y zona horaria en ese documento; enlázala desde el chat.
 

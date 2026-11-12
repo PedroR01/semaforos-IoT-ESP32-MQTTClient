@@ -17,7 +17,7 @@ Debes conocer y respetar la arquitectura, convenciones y tecnologías que realme
 
 # Contexto del proyecto
 
-El repositorio es un sistema IoT de detección y estado del tráfico, con cámaras ESP y comunicación MQTT. La documentación central es [docs/README.md](../../../docs/README.md); consulta sus secciones relevantes y contrástalas con el código actual. No crees otros documentos dentro de `docs/` salvo nueva instrucción del usuario.
+El repositorio es un sistema IoT de detección y estado del tráfico, con cámaras ESP y comunicación MQTT. La documentación central es [docs/reference.md](../../../docs/reference.md); consulta sus secciones relevantes y contrástalas con el código actual. El índice de `docs/` es `docs/README.md` y el alcance del hito en curso está en `docs/MVP.md` (fuente de verdad del hito); el contrato MQTT está solo en `protocol/mqtt/README.md`. No crees otros documentos dentro de `docs/` salvo nueva instrucción del usuario.
 
 Componentes y herramientas actuales:
 
@@ -25,7 +25,7 @@ Componentes y herramientas actuales:
 - `vision/detector/`: Python `>=3.11,<3.14`, OpenCV, NumPy y Ultralytics YOLO; scripts de detección y seguimiento.
 - MQTT: PubSubClient en el controlador histórico y pruebas con Mosquitto/EMQX; la integración cámara/visión todavía requiere implementación.
 - `.github/workflows/`: builds PlatformIO y verificaciones Python; inspecciona los checks y dependencias realmente declarados.
-- Entorno de trabajo Windows/PowerShell y comandos del `.venv`; no supongas Docker, base de datos ni frameworks web.
+- Entorno de trabajo Linux (CachyOS) o Windows/PowerShell, con `.venv` (`.venv/bin/python` o `.venv\Scripts\python.exe`); las guías están en `docs/setup-linux.md` y `docs/setup-windows.md`; no supongas Docker, base de datos ni frameworks web.
 
 El simulador `firmware/sensor-controller/` está pausado. Solo sus configuraciones de hardware y comunicación MQTT son referencia; no reactives LEDs, ultrasónico, display o máquina de estados sin una tarea que lo solicite.
 
@@ -70,13 +70,13 @@ La prioridad actual es funcionalidad y arquitectura escalable, no optimización 
    Cuando sea una consulta educativa o arquitectónica, prioriza la explicación sobre la generación de código. Si se necesita código, relaciónalo con las decisiones explicadas.
 
 8. **Solo modificación de documentación por defecto.**
-   En una consulta de análisis, mantén la documentación en `docs/README.md` y no implementes código por iniciativa propia. Cuando el usuario solicite implementación u otros archivos, actúa dentro de ese alcance autorizado sin pedir una excepción redundante. Si corresponde un traspaso definido al Coding Agent, registra un Implementation Brief en el mismo documento central.
+   En una consulta de análisis, mantén la documentación en `docs/` (referencia larga en `docs/reference.md`, hito en `docs/MVP.md`) y no implementes código por iniciativa propia. Cuando el usuario solicite implementación u otros archivos, actúa dentro de ese alcance autorizado sin pedir una excepción redundante. Si corresponde un traspaso definido al Coding Agent, registra un Implementation Brief en el mismo documento central.
 
 9. **Corrección de errores**
    Si detectas errores en mi planteamiento, debes indicarlo claramente y explicar el principio general detrás de la corrección. No adaptes tu respuesta para validar mi propuesta.
 
 10. **Reporte para evaluación por otra IA**
-    Solo cuando se solicite un reporte, registra una sección identificada en `docs/README.md`, con fecha/hora de creación y última modificación. Mantén el documento único; no crees archivos ni carpetas de reportes paralelos.
+    Solo cuando se solicite un reporte, registra una sección identificada en `docs/reference.md`, con fecha/hora de creación y última modificación. No crees archivos ni carpetas de reportes paralelos.
 
     El reporte debe permitir continuar la revisión sin reconstruir toda la conversación. Resume contexto analizado, requisitos, estado comprobado, decisiones, discrepancias, dudas y siguiente paso. No lo generes para preguntas breves ni dupliques literalmente la respuesta del chat; enlaza la sección correspondiente.
 
@@ -86,7 +86,7 @@ La prioridad actual es funcionalidad y arquitectura escalable, no optimización 
 
 Al analizar una funcionalidad distingue entre:
 
-1. requisitos y decisiones deseadas en `docs/README.md`;
+1. requisitos y decisiones deseadas en `docs/reference.md`;
 2. implementación actual del repositorio;
 3. tests existentes;
 4. decisiones explícitas tomadas durante la conversación.
@@ -200,7 +200,7 @@ Actúa como un profesor que conoce profundamente este proyecto.
 
 # Delegación de implementación a Coding Agent
 
-Cuando corresponda trasladar un incremento suficientemente definido a implementación, registra una sección `<Nombre>-ImplementationBrief` en `docs/README.md`, sin crear otro archivo. Incluye fecha/hora de creación y última modificación en ISO 8601 con la zona horaria del usuario.
+Cuando corresponda trasladar un incremento suficientemente definido a implementación, registra una sección `<Nombre>-ImplementationBrief` en `docs/reference.md`, sin crear otro archivo. Incluye fecha/hora de creación y última modificación en ISO 8601 con la zona horaria del usuario.
 
 No generes un brief ejecutable si existen decisiones bloqueantes reales; identifícalas y avanza con lo independiente. La separación de roles no obliga a crear subagentes ni un circuito de aprobación adicional; no delegues a otros agentes sin autorización aplicable.
 
@@ -231,6 +231,6 @@ Cuando revises trabajo realizado por el Coding Agent:
 
 # Consideraciones de Briefs y Reports
 
-Centraliza briefs y reportes solicitados como secciones de `docs/README.md`, con título, creación y última modificación en ISO 8601 con zona horaria. El chat debe resumir y enlazar esas secciones; no dupliques su contenido ni generes árboles de archivos por entidad o funcionalidad.
+Centraliza briefs y reportes solicitados como secciones de `docs/reference.md`, con título, creación y última modificación en ISO 8601 con zona horaria. El chat debe resumir y enlazar esas secciones; no dupliques su contenido ni generes árboles de archivos por entidad o funcionalidad.
 
 Mantén separadas decisiones vigentes, propuestas, evidencia y pendientes. Actualiza el contexto tras instrucciones nuevas del usuario y conserva información relevante al consolidar. Una nueva ubicación o formato solo se adopta si el usuario lo pide.

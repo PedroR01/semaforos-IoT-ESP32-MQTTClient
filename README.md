@@ -23,6 +23,8 @@ Este proyecto no requiere Docker. PlatformIO instala automáticamente el framewo
 
 ## Instalación e inicialización
 
+> **Linux:** seguir [docs/setup-linux.md](docs/setup-linux.md). Los pasos de abajo están escritos para Windows/PowerShell (también en [docs/setup-windows.md](docs/setup-windows.md)). Índice de documentación: [docs/README.md](docs/README.md).
+
 Ejecutar estos pasos desde la raíz del repositorio. La guía usa Python 3.12 para que todos los contribuyentes trabajen con una versión compatible y reproducible.
 
 ### 1. Instalar Python
@@ -209,4 +211,4 @@ La migración progresiva apunta a separar:
 
 ## Seguridad
 
-No introducir credenciales reales, modelos descargados ni resultados de ejecución en commits. Los puertos serie son configuraciones locales y no forman parte de CI. El controlador legado selecciona `LOCAL_BROKER:1883` y utiliza el tópico fijo `semaforo/esp32`; su contrato está descrito en `protocol/mqtt/README.md`. La integración MQTT de cámara y visión está pendiente y se especifica en `docs/README.md`.
+No introducir credenciales reales, modelos descargados ni resultados de ejecución en commits. Los puertos serie son configuraciones locales y no forman parte de CI. El controlador legado selecciona `LOCAL_BROKER:1883` y utiliza el tópico fijo `semaforo/esp32`; su contrato está descrito en `protocol/mqtt/README.md`. La integración MQTT de cámara y visión está pendiente; el alcance del MVP está en `docs/MVP.md` y el contrato en `protocol/mqtt/README.md`.
