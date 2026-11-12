@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "semaforos-control"
+version = "0.1.0"
+description = "Controlador y semáforo simulado (M2), unidos por MQTT"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "paho-mqtt>=2.0,<3",
+]
+
+[tool.setuptools]
+py-modules = ["traffic_logic", "traffic_controller", "traffic_light_sim"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
