@@ -1,6 +1,6 @@
 # Contrato MQTT
 
-Única fuente del contrato MQTT del proyecto. Los demás documentos enlazan aquí. Última revisión: 2026-11-12.
+Única fuente del contrato MQTT del proyecto. Los demás documentos enlazan aquí. Última revisión: 2026-11-12 (latido, lease y Last Will de controlador y semáforo).
 
 ## 1. Contrato legado (sensor-controller, pausado)
 
@@ -24,6 +24,9 @@ Raíz de tópicos: `trafico/v1/`. Versión de payload en el campo `v`. Alcance y
 | `trafico/v1/<camera_id>/state` | ESP (con Last Will) | `online`/`offline`, IP, RSSI | 1 | Sí |
 | `trafico/v1/<interseccion_id>/commands` | Controlador (decisión) | Fase por acceso, duración y motivo | 1 | No |
 | `trafico/v1/<interseccion_id>/state` | Semáforo (actuación) | Fase efectiva | 1 | Sí |
+| `trafico/v1/<interseccion_id>/controller/heartbeat` | Controlador | Latido cada 1 s (§2.3) | 0 | No |
+| `trafico/v1/<interseccion_id>/controller/status` | Controlador (con Last Will) | `online`/`offline` e `instance_id` (§2.3) | 1 | Sí |
+| `trafico/v1/<interseccion_id>/light/status` | Semáforo (con Last Will) | `online`/`offline` (§2.3) | 1 | Sí |
 
 Ejemplo de `detections` (ilustrativo; **no es la salida actual** de los scripts):
 
@@ -73,7 +76,7 @@ Reglas:
 - `phase`: `approach_id -> green|yellow|red`, con exactamente los accesos de la intersección. Fases válidas: un solo verde y el resto rojo; un solo amarillo y el resto rojo; todo rojo.
 - `duration_s`: **tiempo mínimo garantizado** de esa fase, no su duración total. Amarillo = 2 s, todo-rojo = 2 s; verde adaptativo = verde mínimo (5 s; dura hasta el siguiente comando, máximo 20 s); verde en ciclo fijo = 10 s. La fase vigente dura hasta el siguiente comando.
 - `reason`: `demand`, `max_green`, `fixed_cycle_no_data`, `startup` (arranque), `data_recovered` (vuelta a adaptativo). `min_green_hold` no se emite.
-- `mode`: `adaptive` o `fixed` (ciclo base de respaldo por falta de dato vigente).
+- `mode`: `adaptive` o `fixed` (ciclo base de respaldo por falta de dato vigente). El controlador no puede ordenar `failsafe`: el semáforo rechaza ese modo en `commands` (es exclusivo de su watchdog local, §2.3).
 - Secuencia: todo-rojo -> verde(X) -> amarillo(X) -> todo-rojo -> verde(Y). Un cambio de modo sin cambio de fase se declara con un comando de la **misma** fase y nuevo `mode`/`reason` (el semáforo lo acepta como "refresco").
 - QoS 1, sin retención, un `event_id` único por comando (el semáforo ignora un `event_id` repetido).
 
@@ -93,11 +96,39 @@ Reglas:
 }
 ```
 
-- Es la **fase efectiva**. `since` es cuándo cambió de fase; `event_id`, `mode` y `reason` son los del último comando aceptado (`null` / `sim_start` al arrancar, que parte en todo-rojo).
-- Se publica al conectar, tras cada comando aceptado y **tras cada comando rechazado** (para que el controlador se resincronice).
-- El controlador adopta la fase de un `state` cuyo `event_id` no es el último que emitió y cuya fase difiere de la que cree; así un controlador recién iniciado conoce la fase efectiva antes de ordenar.
+- Es la **fase efectiva**. `since` es cuándo cambió de fase; `event_id`, `mode` y `reason` son los del último comando aceptado (`null` / `sim_start` al arrancar, que parte en todo-rojo) o de la última orden local del watchdog (`event_id` con prefijo `local-`).
+- `mode` puede valer además `failsafe` con `reason: controller_lost` (secuencia local por controlador perdido) y, al salir, el modo del último latido (`adaptive`/`fixed`; `fixed` si no se conoce) con `reason: controller_recovered`, sin cambiar la fase ni `since`.
+- Se publica al conectar, tras cada comando aceptado, **tras cada comando rechazado o ignorado en failsafe** (para que el controlador se resincronice) y tras cada orden local del watchdog.
+- El controlador adopta la fase de un `state` cuyo `event_id` no es el último que emitió y cuya fase difiere de la que cree; así un controlador recién iniciado conoce la fase efectiva antes de ordenar. Si `light/status` dice `offline` no adopta el `state` (es de un semáforo caído) ni emite comandos hasta ver `online`.
 - El semáforo rechaza (registra y no cambia de fase) un comando con: dos o más verdes, verde y amarillo a la vez, transición fuera de la secuencia (p. ej. verde -> verde o verde -> todo-rojo), `duration_s` menor al mínimo de la fase, fase actual que no cumplió su tiempo mínimo (holgura 0,3 s por latencia), `intersection_id` ajeno o campos inválidos.
-- Sin Last Will del semáforo: si el proceso muere, el `state` retenido queda con la última fase.
+- Si el proceso del semáforo muere, el `state` retenido queda con la última fase; el Last Will en `light/status` (§2.3) indica que ya no es válido.
+
+### 2.3 Latido, lease y estado de proceso (implementado el 2026-11-12; brief en docs/reference.md §15)
+
+`controller/heartbeat` (QoS 0, sin retención), cada `--heartbeat-every` s (1 s) mientras el controlador tenga conexión, en cualquier modo y también en reposo (sin comandos):
+
+```json
+{"v": 1, "instance_id": "4f0c2b9e8a1d4c37b6e5a2f9d1c08e7a", "seq": 42, "sent_at": "2026-11-12T23:10:05Z", "mode": "adaptive"}
+```
+
+- `instance_id`: UUID nuevo en cada arranque del controlador. `seq` crece de a 1 dentro de una instancia. `mode`: `adaptive` o `fixed`.
+
+`controller/status` y `light/status` (QoS 1, retenidos):
+
+```json
+{"v": 1, "intersection_id": "inter-01", "instance_id": "4f0c2b9e8a1d4c37b6e5a2f9d1c08e7a", "status": "online", "sent_at": "2026-11-12T23:10:00Z"}
+```
+
+- Cada proceso publica `online` al conectar y `offline` explícito al cerrarse con Ctrl+C. El **Last Will** (`offline`, mismo tópico, QoS 1, retenido) es fijo al conectar y **no lleva `sent_at`**; el broker lo publica si el proceso desaparece sin despedirse: al instante si el socket se cierra (crash o `kill -9` en el mismo equipo; observado en ~0,2 s) o tras 1,5 × keepalive (15 s → ~22 s) si la conexión se corta en silencio (red). Si cae el broker no hay Last Will: protege el lease.
+- `light/status` no lleva `instance_id`.
+
+Lease y watchdog del semáforo (`traffic_logic.FailSafe`):
+
+- El semáforo considera vivo al controlador mientras reciba **cualquier** mensaje suyo en `controller/heartbeat` (con `instance_id`) o en `commands` dentro de `--lease` s (5 s). Un `online` (retenido, puede ser viejo) no renueva el lease. Al arrancar el semáforo concede un lease de gracia. Se exige `--lease >= 2 × --heartbeat-every`.
+- Al vencer el lease, o al llegar `offline` en `controller/status` de la instancia conocida (o de cualquiera si todavía no conoce ninguna), pasa a `mode: failsafe`, `reason: controller_lost`: un verde sigue hasta completar `max_green` (20 s) desde que empezó la fase (si ya lo superó, pasa enseguida a amarillo); un amarillo o todo-rojo completa su tiempo; luego corre un ciclo fijo local (`--fixed-green` 10 s por acceso, orden de `--approaches` desde el siguiente al último verde) con amarillo y todo-rojo. Nunca va de verde a rojo directo: toda orden local pasa por el mismo validador que los comandos. Un `offline` de otra `instance_id` se ignora.
+- En failsafe ignora (y registra) los comandos recibidos, aunque renuevan el lease.
+- Sale del failsafe cuando el lease sigue sano y los mensajes del controlador abarcan `--recover-lease` s (3 s) desde el primero recibido tras el vencimiento (con latidos a 1 Hz, el cuarto latido); si el lease vuelve a vencer, el cronómetro se reinicia. Conserva la fase y su `since`.
+- Si llegan latidos de dos `instance_id` distintos con menos de `--lease` s entre sí, se registra un aviso (dos controladores a la vez o reinicio rápido); ambos renuevan el lease.
 
 ## 3. Probar el broker
 

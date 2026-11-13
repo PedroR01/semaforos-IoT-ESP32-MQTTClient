@@ -1,6 +1,6 @@
 ## Retomar el proyecto sin el historial del chat
 
-Punto de entrada para `project-mentor` y `coding-agent`. Corte de contexto: **2026-11-12, ~21:00**, zona `America/Buenos_Aires`. Reemplaza al del 08/11. Lo que importa para continuar está aquí; el detalle largo está enlazado.
+Punto de entrada para `project-mentor` y `coding-agent`. Corte de contexto: **2026-11-12, ~20:30** (actualizado tras el fail-safe), zona `America/Buenos_Aires`. Reemplaza al del 08/11. Lo que importa para continuar está aquí; el detalle largo está enlazado.
 
 ### Contexto mínimo
 
@@ -17,22 +17,23 @@ D01–D07 en [reference.md](reference.md) §12. D08–D13 (08/11): percepción, 
 
 - **Firmware `camera-server`:** stream MJPEG `:81/stream` y `/capture`. Estable con buena señal WiFi (el fallo inicial era señal débil, no código).
 - **Detector** (`vision/detector/cam_detection.py`, `traffic_mqtt.py`): publica cada ~1 s en `trafico/v1/<camera_id>/detections`, `unavailable` si no hay stream, reintento infinito con espera creciente, cierre limpio con Ctrl+C y Last Will. Corregido y verificado.
+- **Fail-safe (§15):** latido, lease, watchdog local y Last Will en `control/`; 83 tests OK; sin verificar con hardware.
 - **M2 en `control/`:** `traffic_logic.py` (lógica pura: política, vigencia, histéresis, validador de secuencia), `traffic_controller.py`, `traffic_light_sim.py`, `tests/` (54 tests). Verificado con Mosquitto local y con la cámara real: funciona en lo básico; **persiste ruido** al usar la cámara real (cortes de señal, detecciones fantasma, objetos de prueba), a retocar más adelante. Contrato en [protocol/mqtt/README.md](../protocol/mqtt/README.md).
 
 ### Qué no existe
 
-Fail-safe del semáforo y latido/will del controlador (brief listo en reference §15), segundo acceso (M3), vista de demo (RF-12), `state` con Last Will del ESP (RF-07), modo local/selector, métricas de espera/cruce, comparación fijo vs adaptativo (RF-14).
+Segundo acceso (M3), vista de demo (RF-12), `state` con Last Will del ESP (RF-07), modo local/selector, métricas de espera/cruce, comparación fijo vs adaptativo (RF-14).
 
 ### Problemas conocidos (no bloquean)
 
-Ruido de la cámara real al dejar de ver vehículos; primera muestra tras un hueco no se suaviza (un conteo de 1 supera el umbral); el semáforo no tiene fail-safe (§15); si el semáforo arranca después del controlador hay un `RECHAZADO` inicial autocorregido (arrancar primero el semáforo); la vigencia compara `processed_at` con el reloj del controlador (válido en una sola PC).
+Ruido de la cámara real al dejar de ver vehículos; primera muestra tras un hueco no se suaviza (un conteo de 1 supera el umbral); si el semáforo arranca después del controlador hay un `RECHAZADO` inicial autocorregido (arrancar primero el semáforo); la vigencia compara `processed_at` con el reloj del controlador (válido en una sola PC).
 
 ### Por dónde continuar (en este orden; M3/M4 no se recortan por el fail-safe)
 
-1. **Fail-safe A+B+C+D:** implementar el brief de [reference.md](reference.md) §15 (coding-agent) y registrar resultados. Si a media tarde del jueves no está terminado, **recortar** y pasar a M3/M4.
+1. **Fail-safe A+B+C+D: implementado** (reference §15, 83 tests OK, integración local informada por el agente). Falta que el propietario ejecute las pruebas F1–F7 de [setup-linux.md](setup-linux.md) §4.
 2. **M3 mínimo:** segundo acceso (S3 o, lo más realista, video grabado como fuente alternativa con otro `--camera-id`/`--approach-id`) y vista de demo mínima: video anotado con conteos y fase vigente (consola o ventana).
 3. **M4:** ensayo completo cronometrado, **video grabado de respaldo**, conteo manual vs sistema sobre un clip de maqueta.
-4. Antes de la presentación: modelo `yolov8n.pt` descargado (sin depender de internet), guion de contingencia, y decidir qué commitear y en qué rama (la actual es `fix/cam-web-server-stream`; hay muchos cambios sin commit).
+4. Antes de la presentación: modelo `yolov8n.pt` descargado (sin depender de internet), guion de contingencia, y decidir qué commitear (rama actual `dev`, M2 ya fusionado en PR #11; sin commit: fail-safe en `control/`, `protocol/mqtt/README.md`, docs y cambios en `.claude/` a confirmar).
 
 Orden de recorte (MVP.md §10): RF-14, RF-12, segundo acceso en tiempo real (usar video), RF-07.
 

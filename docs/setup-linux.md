@@ -152,7 +152,20 @@ mosquitto_pub -t trafico/v1/cam-02/detections -m "{\"v\":1,\"camera_id\":\"cam-0
 
 - Probar: dar más conteo a un acceso y ver el cambio de fase tras el verde mínimo; dejar de publicar y ver `fixed_cycle_no_data` pasados 10 s sin `ok`; reanudar y ver `data_recovered` / `adaptive` tras 3 s; reiniciar controlador y semáforo por separado; publicar a mano un comando con dos verdes en `trafico/v1/inter-01/commands` y ver el `RECHAZADO` en el semáforo.
 - Tests de lógica (sin broker): `python3 -m unittest discover -s control/tests` (o `.venv/bin/python -m pytest control/tests`).
-- Sin Last Will del semáforo: si muere, el `state` retenido conserva la última fase.
+- Fail-safe (reference §15): el controlador publica un latido cada 1 s en `trafico/v1/inter-01/controller/heartbeat` y `online`/`offline` retenido (con Last Will) en `.../controller/status`; el semáforo publica el suyo en `.../light/status`. Si el semáforo no recibe latido ni comando durante `--lease 5` s (o llega `offline`), pasa a `mode=failsafe`, `reason=controller_lost`: completa el verde en curso hasta `--max-green`, amarillo, todo-rojo y ciclo fijo local de `--fixed-green 10` s por acceso. Vuelve al control remoto tras `--recover-lease 3` s de latidos continuos (`reason=controller_recovered`, misma fase). Flags: semáforo `--lease`, `--recover-lease`, `--heartbeat-every` (el que asume del controlador; `lease >= 2×`), `--fixed-green`, `--tick`; controlador `--heartbeat-every 1`. Si el semáforo arranca solo, a los 5 s entra en failsafe: es lo esperado.
+- Observar el fail-safe: `mosquitto_sub -h 127.0.0.1 -t 'trafico/v1/inter-01/#' -v` (latidos cada 1 s, `state` con `mode`, estados `online`/`offline`). Log del semáforo: `FAILSAFE: controlador perdido (...)`, `FAILSAFE fase local: ...`, `IGNORADO en failsafe ...`, `FAILSAFE terminado ...`.
+
+#### Pruebas del fail-safe (las ejecuta el propietario)
+
+| # | Prueba | Cómo | Resultado esperado |
+| --- | --- | --- | --- |
+| F1 | Controlador muere en verde | Con verde en un acceso, `pkill -9 -f traffic_controller.py` | En ≤ 5 s `FAILSAFE: ... sin mensajes`; el verde sigue hasta 20 s desde que empezó, luego amarillo 2 s, todo-rojo 2 s y alterna accesos cada 10 s. ~20 s después llega `offline` (Last Will) en `controller/status` |
+| F2 | Cierre limpio | Ctrl+C en el controlador | `offline` inmediato en `controller/status` y failsafe sin esperar el lease |
+| F3 | Recuperación | Volver a lanzar el controlador | Tras ~3 s de latidos, `FAILSAFE terminado` con la misma fase; luego el controlador decide normalmente sin `RECHAZADO` |
+| F4 | Reposo no es caída | Detector o `mosquitto_pub` con conteo 0 en ambos accesos, adaptativo | Log `reposo`, latidos siguen, el semáforo **no** entra en failsafe |
+| F5 | Broker caído | Detener `mosquitto` 15 s y volver a lanzarlo | El semáforo entra en failsafe por lease y lo sostiene; al volver el broker y reconectar ambos, sale tras 3 s |
+| F6 | Semáforo muere | `pkill -9 -f traffic_light_sim.py` | ~20 s después `offline` en `light/status`; el controlador registra `semáforo offline` y deja de emitir comandos; al relanzar el semáforo, `online` y reanuda |
+| F7 | Cadena real | F1 y F3 con la ESP32-CAM y el detector como acceso-01 | Igual que F1/F3; el detector no participa del fail-safe |
 
 ## 5. Broker MQTT
 
@@ -212,6 +225,8 @@ Completar al ejecutar. Una línea por prueba, con fecha.
 | 2026-11-11 | Cuadro vacío, reconexión del ESP, caída del broker | No registrado |
 | 2026-11-12 | M2: `python3 -m unittest discover -s control/tests` | 36 de 36 OK con Python 3.14 del sistema (lógica pura, sin paho) |
 | 2026-11-12 | M2 contra Mosquitto local (puerto 18830, accesos simulados con `mosquitto_pub`, paho 2.2.0 del entorno del detector vía PYTHONPATH) | Cambio por demanda, `fixed_cycle_no_data` tras T, vuelta a `adaptive`, rechazo de dos verdes y reinicios por separado observados. Pendiente: cadena con detector/ESP real |
+| 2026-11-12 | Fail-safe: `python3 -m unittest discover -s control/tests` | 83 de 83 OK (verificado por el mentor) |
+| 2026-11-12 | Fail-safe contra Mosquitto local (puerto 18831, paho por `PYTHONPATH`) | Informado por el Coding Agent: `kill -9` en verde, Ctrl+C, reinicio, broker caído y SIGSTOP con la secuencia esperada. Pendiente: F1–F7 por el propietario |
 | 2026-11-08 | `command -v uv pio mosquitto` | `uv` y `mosquitto` presentes; **`pio` ausente**, sin `~/.platformio` (no se puede compilar ni cargar desde el sandbox) |
 | 2026-11-08 | `id` | Grupos: `pedror01`, `nobody`. **Sin `uucp`** (visto desde el sandbox; confirmar en la terminal propia) |
 | 2026-11-08 | `lsusb` / `/dev/ttyUSB*` | `lsusb` ve un CH340 (`1a86:7523`), pero **no existe `/dev/ttyUSB*`** dentro del sandbox: no se pudo abrir el puerto ni leer el log |

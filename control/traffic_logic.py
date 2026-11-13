@@ -1,6 +1,6 @@
-"""Lógica pura de M2 (sin MQTT ni reloj propio): política del controlador y validador del semáforo.
+"""Lógica pura de M2 (sin MQTT ni reloj propio): política del controlador, validador y watchdog del semáforo.
 
-Contrato: protocol/mqtt/README.md §2. Brief: docs/reference.md §14.
+Contrato: protocol/mqtt/README.md §2. Briefs: docs/reference.md §14 (M2) y §15 (fail-safe).
 Todo método que depende del tiempo recibe `now` (segundos epoch) para poder probarlo sin esperar.
 """
 import uuid
@@ -12,8 +12,11 @@ PAYLOAD_VERSION = 1
 
 GREEN, YELLOW, ALL_RED = "green", "yellow", "all_red"
 LIGHT_VALUES = ("green", "yellow", "red")
-ADAPTIVE, FIXED = "adaptive", "fixed"
+ADAPTIVE, FIXED, FAILSAFE = "adaptive", "fixed", "failsafe"
 REASON_FIXED = "fixed_cycle_no_data"
+REASON_CONTROLLER_LOST = "controller_lost"
+REASON_CONTROLLER_RECOVERED = "controller_recovered"
+ONLINE, OFFLINE = "online", "offline"
 
 
 @dataclass(frozen=True)
@@ -62,6 +65,37 @@ def commands_topic(intersection_id: str, root: str = TOPIC_ROOT) -> str:
 
 def state_topic(intersection_id: str, root: str = TOPIC_ROOT) -> str:
     return f"{root}/{intersection_id}/state"
+
+
+def controller_heartbeat_topic(intersection_id: str, root: str = TOPIC_ROOT) -> str:
+    return f"{root}/{intersection_id}/controller/heartbeat"
+
+
+def controller_status_topic(intersection_id: str, root: str = TOPIC_ROOT) -> str:
+    return f"{root}/{intersection_id}/controller/status"
+
+
+def light_status_topic(intersection_id: str, root: str = TOPIC_ROOT) -> str:
+    return f"{root}/{intersection_id}/light/status"
+
+
+def heartbeat_payload(instance_id: str, seq: int, now: float, mode: str) -> dict:
+    return {"v": PAYLOAD_VERSION, "instance_id": instance_id, "seq": seq, "sent_at": utc_iso(now), "mode": mode}
+
+
+def process_status_payload(intersection_id: str, status: str, now: float | None = None, **ids) -> dict:
+    """`online`/`offline` retenido de un proceso. Sin `now` (Last Will) no lleva `sent_at`: es fijo al conectar."""
+    payload = {"v": PAYLOAD_VERSION, "intersection_id": intersection_id, **ids, "status": status}
+    if now is not None:
+        payload["sent_at"] = utc_iso(now)
+    return payload
+
+
+def rotation_after(approaches, approach) -> list:
+    """Accesos en orden cíclico empezando por el siguiente a `approach` (el primero si es None o ajeno)."""
+    n = len(approaches)
+    start = approaches.index(approach) + 1 if approach in approaches else 0
+    return [approaches[(start + i) % n] for i in range(n)]
 
 
 def phase_to_dict(phase: Phase, approaches) -> dict:
@@ -126,6 +160,8 @@ class ControllerLogic:
     el ciclo fijo (`fixed_green_s` por acceso, en orden) con `reason=fixed_cycle_no_data`. En ADAPTIVE con
     algún dato vencido (gracia) se mantiene el verde, sin decidir por demanda, hasta `max_green_s`.
     Sin demanda en ningún acceso (reposo) el verde actual se mantiene indefinidamente.
+    Si el semáforo declara `offline` (light/status) no se adopta su `state` ni se emiten comandos hasta
+    que vuelva a declarar `online`; sin ningún `light/status` recibido se lo supone en línea.
     """
 
     def __init__(self, intersection_id: str, approaches, params: Params, now: float,
@@ -148,6 +184,7 @@ class ControllerLogic:
         self._last_ok: dict[str, float] = {}  # processed_at del último `ok` de cada acceso (sobrevive a `unavailable`)
         self._all_fresh_since: float | None = None
         self.resting = False
+        self.light_online = True
         self.notes: list[str] = []  # transiciones de modo/reposo para el log; se vacían con pop_notes()
 
     # -- entrada de detecciones
@@ -201,8 +238,24 @@ class ControllerLogic:
 
     # -- estado efectivo del semáforo
 
+    def on_light_status(self, payload: dict, now: float) -> str:
+        """`offline` olvida la fase creída (el `state` retenido es de un semáforo caído); `online` la habilita."""
+        status = payload.get("status") if isinstance(payload, dict) else None
+        if status not in (ONLINE, OFFLINE):
+            return "ignored: light/status inválido"
+        online = status == ONLINE
+        if online != self.light_online:
+            self.light_online = online
+            if not online:
+                self.phase, self.pending_target = None, None
+            self.notes.append("semáforo online: se reanudan los comandos" if online
+                              else "semáforo offline: sin comandos ni adopción de state hasta que vuelva")
+        return status
+
     def on_effective_state(self, state: dict, now: float) -> str:
         """El semáforo manda: si su fase difiere de la que creemos (arranque, reinicio, rechazo), se adopta."""
+        if not self.light_online:
+            return "ignored: semáforo offline"
         try:
             phase = phase_from_dict(state["phase"], self.approaches)
         except (KeyError, TypeError, ValueError) as e:
@@ -246,6 +299,11 @@ class ControllerLogic:
                                             f"{now - self._all_fresh_since:.1f} s")
         return self._mode
 
+    @property
+    def current_mode(self) -> str:
+        """Último modo calculado por `mode()`, sin efectos (para el latido)."""
+        return self._mode
+
     def _switch_mode(self, mode: str, note: str):
         self._mode, self._all_fresh_since = mode, None
         self.notes.append(note)
@@ -259,6 +317,8 @@ class ControllerLogic:
         mode = self.mode(now)  # también durante la espera inicial: el cronómetro de recuperación corre
         if now - self._created < self.start_wait_s:
             return None  # deja llegar el state retenido y las primeras detecciones antes de decidir
+        if not self.light_online:
+            return None
         if self.phase is None:
             return self._emit((ALL_RED, None), now, mode)
         self._update_resting(mode, now)
@@ -280,13 +340,8 @@ class ControllerLogic:
             return self._emit(self.phase, now, mode, reason=REASON_FIXED if mode == FIXED else "data_recovered")
         return None
 
-    def _rotation_after(self, approach):
-        n = len(self.approaches)
-        start = self.approaches.index(approach) + 1 if approach in self.approaches else 0
-        return [self.approaches[(start + i) % n] for i in range(n)]
-
     def _choose_target(self, mode: str, last: str | None) -> str:
-        order = self._rotation_after(last)
+        order = rotation_after(self.approaches, last)
         return order[0] if mode == FIXED else self._highest_demand(order)
 
     def _highest_demand(self, order):
@@ -309,7 +364,7 @@ class ControllerLogic:
     def _green_decision(self, mode, current, elapsed, now):
         """(acceso siguiente, motivo) si el verde debe terminar ya; None si continúa."""
         p = self.params
-        order = self._rotation_after(current)[:-1]  # los demás, empezando por el siguiente cíclico
+        order = rotation_after(self.approaches, current)[:-1]  # los demás, empezando por el siguiente cíclico
         if mode == FIXED:
             return (order[0], REASON_FIXED) if order and elapsed >= p.fixed_green_s else None
         if not order or elapsed < p.min_green_s:
@@ -391,10 +446,14 @@ class SequenceValidator:
         self.event_id: str | None = None
         self.mode: str | None = None
         self.reason = "sim_start"
+        self.last_green: str | None = None
         self._seen_events: set[str] = set()
 
-    def apply(self, cmd, now: float) -> str:
-        """'changed', 'refreshed' (misma fase, nuevo modo/motivo) o 'duplicate'; UnsafeCommand si se rechaza."""
+    def apply(self, cmd, now: float, modes=(ADAPTIVE, FIXED)) -> str:
+        """'changed', 'refreshed' (misma fase, nuevo modo/motivo) o 'duplicate'; UnsafeCommand si se rechaza.
+
+        `modes` son los modos admitidos: el controlador no puede ordenar `failsafe`; solo FailSafe lo usa.
+        """
         if not isinstance(cmd, dict):
             raise UnsafeCommand("el comando no es un objeto JSON")
         event_id, mode, duration = cmd.get("event_id"), cmd.get("mode"), cmd.get("duration_s")
@@ -404,7 +463,7 @@ class SequenceValidator:
             return "duplicate"
         if cmd.get("intersection_id") != self.intersection_id:
             raise UnsafeCommand(f"intersection_id {cmd.get('intersection_id')!r} no corresponde")
-        if mode not in (ADAPTIVE, FIXED) or not isinstance(cmd.get("reason"), str):
+        if mode not in modes or not isinstance(cmd.get("reason"), str):
             raise UnsafeCommand("mode o reason inválidos")
         if not isinstance(duration, (int, float)) or isinstance(duration, bool):
             raise UnsafeCommand("duration_s inválido")
@@ -419,6 +478,8 @@ class SequenceValidator:
         self._seen_events.add(event_id)
         if outcome == "changed":
             self.phase, self.since = new, now
+            if new[0] == GREEN:
+                self.last_green = new[1]
         self.duration_s, self.event_id, self.mode, self.reason = duration, event_id, mode, cmd["reason"]
         return outcome
 
@@ -446,3 +507,173 @@ class SequenceValidator:
             "reason": self.reason,
             "updated_at": utc_iso(now),
         }
+
+
+@dataclass(frozen=True)
+class LeaseParams:
+    """Watchdog del semáforo (docs/reference.md §15). `heartbeat_every_s` es el valor que se asume del controlador."""
+    lease_s: float = 5.0
+    recover_lease_s: float = 3.0
+    heartbeat_every_s: float = 1.0
+
+    def __post_init__(self):
+        if self.heartbeat_every_s <= 0 or self.recover_lease_s < 0:
+            raise ValueError("se exige heartbeat_every > 0 y recover_lease >= 0")
+        if self.lease_s < 2 * self.heartbeat_every_s:
+            raise ValueError("se exige lease >= 2 x heartbeat_every (un latido perdido no debe vencerlo)")
+
+
+class FailSafe:
+    """Lease del controlador y secuencia segura local del semáforo simulado.
+
+    Lease: cualquier latido o comando renueva el lease; el silencio de comandos con latidos vivos (reposo) no
+    lo vence. Al arrancar el semáforo hay un lease de gracia. Al vencer, o al llegar `offline` de la instancia
+    conocida (o de cualquiera si no se conoce ninguna), entra en failsafe (`mode=failsafe`,
+    `reason=controller_lost`): un verde sigue hasta `max_green_s` desde que empezó la fase, luego amarillo y
+    todo-rojo, y después ciclo fijo local (`fixed_green_s`) desde el acceso siguiente al último verde. Toda
+    orden local pasa por `SequenceValidator.apply`, así que nunca hay verde -> rojo directo.
+    Salida: el lease debe seguir sano y haber mensajes del controlador que abarquen `recover_lease_s` desde el
+    primero recibido tras el vencimiento (un latido aislado no alcanza). Al salir se conservan fase y `since`.
+    `tick` debe llamarse periódicamente (no solo al llegar mensajes): el lease vence en silencio.
+    """
+
+    def __init__(self, light: SequenceValidator, lease: LeaseParams, now: float,
+                 new_event_id=lambda: uuid.uuid4().hex):
+        self.light = light
+        self.lease = lease
+        self._new_event_id = new_event_id
+        self.active = False
+        self._last_seen: float | None = now  # gracia de arranque: el controlador tiene un lease para aparecer
+        self._recovery_from: float | None = None
+        self._instance: str | None = None
+        self._controller_mode: str | None = None
+        self._local_green: tuple | None = None  # (fase, since) del verde iniciado por el ciclo local
+        self._dup_warned_at: float | None = None
+        self._applied: list[dict] = []
+        self.notes: list[str] = []
+
+    def pop_notes(self) -> list[str]:
+        notes, self.notes = self.notes, []
+        return notes
+
+    # -- mensajes del controlador
+
+    def on_heartbeat(self, payload, now: float) -> str:
+        instance = payload.get("instance_id") if isinstance(payload, dict) else None
+        if not isinstance(instance, str) or not instance:
+            return "ignored: latido sin instance_id"
+        self._warn_if_two_instances(instance, now)
+        self._instance, self._last_seen = instance, now
+        if payload.get("mode") in (ADAPTIVE, FIXED):
+            self._controller_mode = payload["mode"]
+        return "accepted"
+
+    def on_controller_status(self, payload, now: float) -> str:
+        """Solo `offline` actúa (adelanta el failsafe); un `online` retenido puede ser viejo y no renueva el lease."""
+        status = payload.get("status") if isinstance(payload, dict) else None
+        if status not in (ONLINE, OFFLINE):
+            return "ignored: controller/status inválido"
+        if status == ONLINE:
+            return "online"
+        instance = payload.get("instance_id")
+        if self._instance is not None and instance != self._instance:
+            return f"ignored: offline de otra instancia ({instance})"
+        self._last_seen, self._recovery_from = None, None
+        self.notes.append(f"controlador offline (instancia {instance}): failsafe sin esperar el lease")
+        return "offline"
+
+    def on_command(self, cmd, now: float) -> str:
+        """Renueva el lease; en failsafe ignora el comando ('ignored_failsafe'), si no lo valida (UnsafeCommand)."""
+        self._last_seen = now
+        if self.active:
+            return "ignored_failsafe"
+        return self.light.apply(cmd, now)
+
+    def _warn_if_two_instances(self, instance: str, now: float):
+        if (self._instance in (None, instance) or self._last_seen is None
+                or now - self._last_seen >= self.lease.lease_s):
+            return
+        if self._dup_warned_at is None or now - self._dup_warned_at >= self.lease.lease_s:
+            self._dup_warned_at = now
+            self.notes.append(f"AVISO: latidos de dos instance_id distintos en menos de {self.lease.lease_s} s "
+                              f"({self._instance} y {instance}): ¿dos controladores a la vez o reinicio rápido?")
+
+    # -- reloj
+
+    def lease_ok(self, now: float) -> bool:
+        return self._last_seen is not None and now - self._last_seen < self.lease.lease_s
+
+    def tick(self, now: float) -> list[dict]:
+        """Avanza el watchdog. Devuelve las órdenes locales aplicadas en este tick (vacía si nada cambió)."""
+        self._applied = []
+        if not self.active and not self.lease_ok(now):
+            self._enter(now)
+        elif self.active and self._recovered(now):
+            self._exit(now)
+        if self.active:
+            self._advance(now)
+        return self._applied
+
+    def _recovered(self, now: float) -> bool:
+        if not self.lease_ok(now):
+            self._recovery_from = None  # el cronómetro de recuperación se reinicia
+            return False
+        if self._recovery_from is None:
+            self._recovery_from = self._last_seen
+        return self._last_seen - self._recovery_from >= self.lease.recover_lease_s
+
+    def _enter(self, now: float):
+        self.active, self._recovery_from = True, None
+        cause = "offline" if self._last_seen is None else f"sin mensajes hace {now - self._last_seen:.1f} s"
+        self.notes.append(f"FAILSAFE: controlador perdido ({cause}); secuencia local desde {phase_label(self.light.phase)}")
+        green_rest = self.light.params.max_green_s  # el verde en curso sigue hasta max_green desde su inicio
+        self._order(self.light.phase, now, FAILSAFE, REASON_CONTROLLER_LOST, green_s=green_rest)
+
+    def _exit(self, now: float):
+        self.active = False
+        mode = self._controller_mode or FIXED
+        self.notes.append(f"FAILSAFE terminado: controlador con lease sano {self.lease.recover_lease_s} s; "
+                          f"se conserva {phase_label(self.light.phase)}")
+        self._order(self.light.phase, now, mode, REASON_CONTROLLER_RECOVERED, green_s=self.light.params.min_green_s)
+
+    def _advance(self, now: float):
+        """Un paso de la secuencia local si la fase actual cumplió su duración."""
+        p = self.light.params
+        kind, approach = self.light.phase
+        held = now - self.light.since
+        if kind == GREEN:
+            local = self._local_green == (self.light.phase, self.light.since)
+            if held < (p.fixed_green_s if local else p.max_green_s):
+                return
+            nxt = (YELLOW, approach)
+        elif kind == YELLOW:
+            if held < p.yellow_s:
+                return
+            nxt = (ALL_RED, None)
+        else:
+            if held < p.all_red_s:
+                return
+            nxt = (GREEN, rotation_after(self.light.approaches, self.light.last_green)[0])
+        self._order(nxt, now, FAILSAFE, REASON_CONTROLLER_LOST, green_s=p.fixed_green_s)
+        if kind == ALL_RED:
+            self._local_green = (self.light.phase, self.light.since)
+        self.notes.append(f"FAILSAFE fase local: {phase_label(self.light.phase)}")
+
+    def _order(self, phase: Phase, now: float, mode: str, reason: str, green_s: float):
+        """Orden local por el mismo validador que los comandos remotos (UnsafeCommand sería un bug).
+
+        `duration_s` conserva el significado del contrato: mínimo garantizado de la fase (`green_s` si es verde).
+        """
+        duration = green_s if phase[0] == GREEN else min_duration(phase[0], self.light.params)
+        order = {
+            "v": PAYLOAD_VERSION,
+            "event_id": f"local-{self._new_event_id()}",
+            "intersection_id": self.light.intersection_id,
+            "issued_at": utc_iso(now),
+            "phase": phase_to_dict(phase, self.light.approaches),
+            "duration_s": duration,
+            "reason": reason,
+            "mode": mode,
+        }
+        self.light.apply(order, now, modes=(mode,))
+        self._applied.append(order)

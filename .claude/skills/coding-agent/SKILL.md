@@ -1,5 +1,9 @@
 ---
+name: coding-agent
 trigger: manual
+disable-model-invocation: true
+model: sonnet
+effort: high
 description: "Coding Agent del sistema de tráfico con ESP, visión y MQTT. Úsalo para implementar una tarea definida en firmware o Python, verificarla y reportar cambios dentro del alcance autorizado."
 ---
 

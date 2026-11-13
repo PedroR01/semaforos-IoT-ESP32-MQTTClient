@@ -303,6 +303,19 @@ Es diagnóstico del entorno, no benchmark. Modelos, lotes y resolución deben me
 
 Si luego las alternativas disponibles no cumplen, comparar otros nodos o concentradores. Raspberry Pi 5 con AI HAT+ es una opción de inferencia local que requiere modelo/pipeline compatibles y mediciones; no hay evidencia actual que obligue a comprarla. [Referencia de Raspberry Pi](https://www.raspberrypi.com/documentation/accessories/ai-hat-plus.html).
 
+### Rendimiento de captura e inferencia en ESP: investigación (2026-11-12T21:00:00-03:00)
+
+Creado y última modificación: 2026-11-12T21:00:00-03:00. Fuentes: notas del propietario ("Estudios ESP32", Obsidian), FAQ y repositorios de Espressif y reportes de la comunidad. **Nada aplicado ni medido aún.**
+
+- **Cuello de botella sin medir.** El FPS de `--show` es el del bucle del detector (mínimo entre ESP, WiFi y YOLO en CPU). Antes de tocar firmware, medir por separado: log `MJPG ... AVG fps` del firmware (`app_httpd.cpp:297`, nivel INFO), `ffmpeg -i http://IP:81/stream -t 20 -f null -` (ESP + red sin YOLO), `--show` sobre el stream y sobre un archivo local (solo PC).
+- **ESP32-CAM (ESP32 + OV2640).** PCLK máximo del ESP32 clásico: 8 MHz (FAQ de Espressif); el S3 llega a 40 MHz por su interfaz LCD_CAM. En JPEG QVGA el volumen por cuadro es pequeño, así que PCLK no debería limitar (inferencia, sin medir). Ajustes candidatos: XCLK 20→24 MHz, `jpeg_quality` 10→12–15, más luz o menos exposición. Ya aplicados: `fb_count=2` con `CAMERA_GRAB_LATEST` (el driver documenta que dos buffers duplican la tasa en JPEG) y `WiFi.setSleep(false)`. Referencia de la comunidad: ~20–25 FPS en QVGA por WiFi.
+- **Alimentación y calor (de las notas del propietario).** USB 2.0 entrega 500 mA; con cable fino o largo la caída al transmitir por WiFi reinicia el ESP. La OV5640 con XCLK alto se calienta (disipador si transmite continuamente). Afecta estabilidad más que FPS.
+- **Descartado para el stream:** escala de grises (el JPEG ya viene del sensor y YOLO está entrenado en color), `bitbank2/jpegdec` y `CONFIG_CAMERA_PSRAM_DMA` (sirven a decodificación o RGB en el propio ESP, es decir al modo local).
+- **ESP32-S3 + OV5640.** Espressif lista 25 FPS de captura JPEG; sigue bloqueado por pinout y alimentación (D12).
+- **Modo local en S3.** El componente `coco_detect` 0.4.1 de ESP-DL (COCO incluye `car`, `truck`, `bus`, `motorcycle`; no requiere entrenar) informa YOLO11n 320×320 en ~1,3 s por cuadro (solo modelo; +~65–100 ms pre/post) y 640×640 en ~5,6 s, frente a 6–26 s en versiones previas. Es coherente con la nota de ESP-DL de 2026-06 ("más de 3× en S3"), pero no se cruzaron fechas y versiones. Con ~0,7 cuadros/s alcanza para presencia y cola (`visible_count`), no para seguimiento y cruces. Requisitos: modelo en FLASH (`param_copy=false`) porque YOLO11n ocupa ~6 MB de gestor y ~3 MB de parámetros; `partitions.csv` actual de 4 MiB no alcanza. `espdet_pico` (esp-detection) da >7 FPS a 224×224 pero requiere entrenar. Trabajo post-MVP.
+- **Skill `esp32s3-pie-simd`.** Es la referencia de instrucciones SIMD que Espressif usó para optimizar los operadores de ESP-DL; el beneficio se obtiene actualizando ESP-DL, no escribiendo ensamblador. Útil solo para kernels propios del modo local. No aporta al stream ni al MVP.
+- **PC.** torch sin CUDA (§2). Alternativas post-MVP: CUDA en la RTX 2060, o leer el stream en un hilo aparte con el último cuadro (a mano o con `model.track(source=url, stream=True)` de Ultralytics, que lee en otro hilo) para eliminar la latencia acumulada.
+
 ## 11. Orden funcional de desarrollo
 
 Todos los incrementos siguientes están **pendientes**. Son un orden propuesto de desarrollo, no funcionalidades entregadas ni una autorización general para implementar. El estudio acotado de viabilidad local puede adelantarse si resuelve una decisión de arquitectura; no debe bloquear reparaciones o contratos independientes.
@@ -330,18 +343,18 @@ Estos son incrementos propuestos, no permiso para implementar todos en una solic
 | ID  | Decisión vigente del usuario                                                                             | Estado                                                                                            |
 | --- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | D01 | Pausar el desarrollo del simulador y conservar hardware/MQTT como referencia                             | Acordada; no reabrir sin nueva necesidad explícita                                                |
-| D02 | Centralizar toda la información de `docs/` en este único Markdown | **Reemplazada el 08/11/2026** por la organización de la sección 13 |
+| D02 | Centralizar toda la información de `docs/` en este único Markdown                                        | **Reemplazada el 08/11/2026** por la organización de la sección 13                                |
 | D03 | Priorizar funcionalidades y arquitectura escalable antes de optimizar recursos de la PC                  | Acordada; CUDA y compras no bloquean la planificación funcional                                   |
 | D04 | Seleccionar al compilar/cargar dónde se procesa: externo o local en un ESP compatible                    | Requisito acordado; selector/backend todavía no implementados                                     |
 | D05 | Medir presencia, vehículos esperando y conteo de vehículos/pasos para describir flujo y futura prioridad | Requisito acordado; definiciones operativas y tolerancias por cerrar                              |
 | D06 | Validar con maqueta y tráfico real                                                                       | Acordada; no extrapolar automáticamente resultados entre escenarios                               |
 | D07 | Mantener planificación/revisión con Project Mentor y ejecución de tareas definidas con Coding Agent      | Configuraciones adaptadas; una tarea directa suficientemente definida también permite implementar |
-| D08 | Separar percepción, decisión y actuación; unirlas solo por MQTT | Acordada 08/11/2026 (alcance MVP; ver [MVP.md](MVP.md)) |
-| D09 | En el MVP el ESP solo captura, transmite y declara estado; sin inferencia ni métricas | Acordada 08/11/2026 |
-| D10 | Semáforo simulado por software en el MVP | Acordada 08/11/2026 |
-| D11 | Política mínima de prioridad acotada al MVP; excepción explícita al I6 | Acordada 08/11/2026; la política definitiva sigue pendiente (P07) |
-| D12 | El S3/OV5640 entra solo con pinout y alimentación validados; si no, el segundo acceso usa video o webcam | Acordada 08/11/2026 |
-| D13 | Reorganizar `docs/` como índice + MVP + referencia + guías por sistema operativo | Acordada y aplicada 08/11/2026 |
+| D08 | Separar percepción, decisión y actuación; unirlas solo por MQTT                                          | Acordada 08/11/2026 (alcance MVP; ver [MVP.md](MVP.md))                                           |
+| D09 | En el MVP el ESP solo captura, transmite y declara estado; sin inferencia ni métricas                    | Acordada 08/11/2026                                                                               |
+| D10 | Semáforo simulado por software en el MVP                                                                 | Acordada 08/11/2026                                                                               |
+| D11 | Política mínima de prioridad acotada al MVP; excepción explícita al I6                                   | Acordada 08/11/2026; la política definitiva sigue pendiente (P07)                                 |
+| D12 | El S3/OV5640 entra solo con pinout y alimentación validados; si no, el segundo acceso usa video o webcam | Acordada 08/11/2026                                                                               |
+| D13 | Reorganizar `docs/` como índice + MVP + referencia + guías por sistema operativo                         | Acordada y aplicada 08/11/2026                                                                    |
 
 No confundir con acuerdos los nombres de macros/perfiles, el modelo ESPDet-Pico, el uso obligatorio de ESP-IDF, los tópicos/JSON de ejemplo, QoS 0, publicación a 1 Hz, broker local o semántica exacta de unicidad. Son propuestas o referencias que deben evaluarse para el incremento. Tampoco se confirmó todavía que los resultados externos deban regresar al ESP ni quién suministrará la fase efectiva.
 
@@ -364,13 +377,13 @@ Resolver primero las filas que afecten el siguiente incremento. Las elecciones r
 
 Organización de `docs/` (decisión del propietario, 08/11/2026, que reemplaza a D02):
 
-| Documento | Contenido |
-| --- | --- |
-| [README.md](README.md) | Índice y estado actual |
-| [MVP.md](MVP.md) | Alcance, arquitectura, requerimientos y calendario del MVP del 13/11 (fuente de verdad del hito) |
-| [reference.md](reference.md) | Este archivo: referencia técnica larga, decisiones y orden funcional de desarrollo |
-| [setup-linux.md](setup-linux.md), [setup-windows.md](setup-windows.md) | Puesta en marcha por sistema operativo |
-| [agent_session_context.md](agent_session_context.md) | Traspaso para retomar sin el historial del chat |
+| Documento                                                              | Contenido                                                                                        |
+| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| [README.md](README.md)                                                 | Índice y estado actual                                                                           |
+| [MVP.md](MVP.md)                                                       | Alcance, arquitectura, requerimientos y calendario del MVP del 13/11 (fuente de verdad del hito) |
+| [reference.md](reference.md)                                           | Este archivo: referencia técnica larga, decisiones y orden funcional de desarrollo               |
+| [setup-linux.md](setup-linux.md), [setup-windows.md](setup-windows.md) | Puesta en marcha por sistema operativo                                                           |
+| [agent_session_context.md](agent_session_context.md)                   | Traspaso para retomar sin el historial del chat                                                  |
 
 El contrato MQTT tiene una única fuente: [protocol/mqtt/README.md](../protocol/mqtt/README.md). Los estudios y el guion narrativo de la presentación quedan en el vault de Obsidian, con un puntero a `MVP.md`. No crear más `.md` en `docs/` sin instrucción explícita. Los README de componentes deben alinearse al cambiar sus interfaces.
 
@@ -386,14 +399,14 @@ Creado: 2026-11-12T00:00:00-03:00 · Última modificación: 2026-11-12T20:00:00-
 
 ### Parámetros confirmados por el propietario (2026-11-12)
 
-| Parámetro | Valor | Significado |
-| --- | --- | --- |
-| Amarillo | 2 s | Transición fija tras el verde |
-| Todo-rojo | 2 s | Despeje con todos los accesos en rojo entre dos verdes |
-| Verde mínimo | 5 s | Una vez dado, el verde no se corta antes |
-| Verde máximo | 20 s | Tope aunque siga habiendo demanda (equidad) |
-| **T (vigencia)** | 5 s | Un dato de `detections` con `processed_at` más viejo que T, o ausente, se considera vencido |
-| Ciclo base de respaldo | 10 s de verde por acceso | Secuencia fija que se usa sin datos vigentes (modo seguro) |
+| Parámetro              | Valor                    | Significado                                                                                 |
+| ---------------------- | ------------------------ | ------------------------------------------------------------------------------------------- |
+| Amarillo               | 2 s                      | Transición fija tras el verde                                                               |
+| Todo-rojo              | 2 s                      | Despeje con todos los accesos en rojo entre dos verdes                                      |
+| Verde mínimo           | 5 s                      | Una vez dado, el verde no se corta antes                                                    |
+| Verde máximo           | 20 s                     | Tope aunque siga habiendo demanda (equidad)                                                 |
+| **T (vigencia)**       | 5 s                      | Un dato de `detections` con `processed_at` más viejo que T, o ausente, se considera vencido |
+| Ciclo base de respaldo | 10 s de verde por acceso | Secuencia fija que se usa sin datos vigentes (modo seguro)                                  |
 
 ### Objetivo
 
@@ -460,7 +473,7 @@ Una iteración con el Coding Agent; no hizo falta devolver correcciones.
 
 ## 15. FailSafe-ImplementationBrief — Latido, lease, watchdog local y Last Will
 
-Creado: 2026-11-12T21:00:00-03:00 · Última modificación: 2026-11-12T21:00:00-03:00 · Continúa M2 (§14). Requerimientos: RNF-01, RNF-02; refuerza RF-10 y RF-11. Es robustez de arquitectura, **no** está en la lista de "debe" del MVP: si el tiempo aprieta se recorta antes que M3/M4 (ver MVP.md §10).
+Creado: 2026-11-12T21:00:00-03:00 · Última modificación: 2026-11-12T20:30:00-03:00 (estado al final; la hora de creación anotada era estimada) · Continúa M2 (§14). Requerimientos: RNF-01, RNF-02; refuerza RF-10 y RF-11. Es robustez de arquitectura, **no** está en la lista de "debe" del MVP: si el tiempo aprieta se recorta antes que M3/M4 (ver MVP.md §10).
 
 ### Problema
 
@@ -474,7 +487,7 @@ Hoy, si el controlador muere con una fase en verde, el semáforo simulado queda 
   - si está en verde: continúa ese verde hasta completar `max_green` desde que empezó la fase (si ya lo superó, pasa enseguida a amarillo), luego amarillo(X) → todo-rojo;
   - si está en amarillo o todo-rojo: completa la secuencia en curso;
   - después corre un ciclo fijo local (`fixed_green` por acceso, orden de `--approaches` a partir del siguiente al último verde, con amarillo y todo-rojo) y publica cada cambio en `state` con `mode: failsafe`.
-  Las órdenes locales deben pasar por el mismo `SequenceValidator` (se reusa para garantizar la secuencia segura). Mientras está en failsafe ignora y registra los comandos recibidos.
+    Las órdenes locales deben pasar por el mismo `SequenceValidator` (se reusa para garantizar la secuencia segura). Mientras está en failsafe ignora y registra los comandos recibidos.
 - **Salida del failsafe (histéresis):** solo tras `recover_lease` segundos (propuesto 3 s) de lease sano continuo. Al salir conserva la fase y su `since` y desde ese momento valida los comandos normalmente. El controlador ya se resincroniza adoptando el `state` (aviso: su `_set_phase` usa la hora de adopción, no `since`, así que tras el regreso cree que la fase acaba de empezar; es conservador y aceptable).
 - **D. Last Will y estado de proceso:**
   - Controlador: Last Will y estado `online`/`offline` retenido en `trafico/v1/<interseccion_id>/controller/status` (QoS 1) con `instance_id`. Al llegar `offline` el semáforo adelanta el failsafe sin esperar el lease. El will es complementario: no se dispara si cae el broker y tarda 1,5×keepalive; el watchdog es el que protege.
@@ -499,3 +512,22 @@ ESP-NOW y coordinación entre semáforos físicos, modo intermitente y monitor d
 ### Decisiones bloqueantes
 
 Ninguna. Valores de `lease`, `recover_lease` y `heartbeat_every` son propuestas ajustables con el ensayo.
+
+### Estado y revisión del Project Mentor (2026-11-12T20:30:00-03:00)
+
+**Implementado** por el Coding Agent en una iteración; el mentor no devolvió correcciones.
+
+- **Archivos:** `control/traffic_logic.py` (+`LeaseParams`, `FailSafe`, tópicos/payloads de latido y estado de proceso, `rotation_after`, `SequenceValidator.apply(..., modes=)` y `last_green`; `ControllerLogic.on_light_status`), `control/traffic_controller.py` (latido, Last Will/`online`/`offline` en `controller/status`, respeta `light/status`), `control/traffic_light_sim.py` (watchdog con tick cada `--tick` 0,2 s, suscripción a `controller/#`, Last Will/`online`/`offline` en `light/status`), `control/tests/test_failsafe.py` (29 tests nuevos) y `protocol/mqtt/README.md` (§2.3 y `state`).
+- **Verificado por el mentor:** `python3 -m unittest discover -s control/tests` → 83 de 83 OK (54 previos + 29); `py_compile` de los tres archivos OK; revisión del diff contra este brief: secuencia desde verde (hasta `max_green` desde el inicio de la fase), amarillo y todo-rojo; ciclo local desde el siguiente al último verde; toda orden local pasa por `SequenceValidator`; comandos ignorados en failsafe pero renuevan el lease; salida tras `recover_lease` y reinicio del cronómetro; `offline` adelanta el failsafe; `offline` de otra instancia se ignora; aviso de dos `instance_id`.
+- **Informado por el Coding Agent, no repetido por el mentor:** integración con Mosquitto 2.1.2 en el puerto 18831 (python3 3.14 + paho 2.2.0 por `PYTHONPATH`): `kill -9` del controlador en verde, Ctrl+C, reinicio, broker detenido (SIGTERM y `kill -9`) y SIGSTOP. Dos corridas suyas quedaron colgadas en el sandbox (verificar con `ps` fuera del sandbox y detenerlas si siguen).
+- **Decisiones de implementación (aceptadas):**
+  - `keepalive=15` en ambos procesos: el Last Will llega ~20 s después de un `kill -9`; antes actúa el lease (5 s).
+  - Gracia de arranque: el semáforo da un lease al controlador para aparecer; **si arranca solo, a los 5 s entra en failsafe y corre el ciclo local** (cambio visible respecto de M2, es correcto).
+  - Un `offline` retenido de un controlador anterior, con el semáforo sin instancia conocida, provoca failsafe inmediato hasta que llegan latidos durante 3 s.
+  - Un `online` retenido no renueva el lease (puede ser viejo). Salir exige mensajes que abarquen `recover_lease` (un latido aislado no alcanza).
+  - Al salir publica `reason: controller_recovered` con el modo del último latido; `mode: failsafe` en `commands` se rechaza (exclusivo del watchdog).
+  - Al ignorar un comando en failsafe se republica `state` para que el controlador adopte la fase local.
+- **Riesgos y pendientes (no bloquean la demo):**
+  - El aviso de dos `instance_id` también aparece en un reinicio rápido del controlador (falso positivo esperado; el texto lo menciona).
+  - El controlador tras la salida cree que la fase acaba de empezar (aviso ya previsto en el brief).
+  - No verificado con la ESP32-CAM ni el detector real en la cadena, ni con Mosquitto en red. Recetas en [setup-linux.md](setup-linux.md) §4.
